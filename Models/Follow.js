@@ -23,4 +23,6 @@ followSchema.index(
     { unique: true }
 );
 
-module.exports = mongoose.model('Follow', followSchema);
+module.exports =
+    mongoose.models.Follow ||
+    mongoose.model('Follow', followSchema);

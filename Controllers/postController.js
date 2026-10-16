@@ -1,26 +1,41 @@
 
 const mongoose = require('mongoose');
-const Post = require('../Models/post');
+const Post = require('../Models/Post');
+const Follow = require('../Models/Follow');
+
 
 const createPost = async (req, res) => {
     try {
-        const { content } = req.body;
+        const content =
+            typeof req.body.content === 'string'
+                ? req.body.content.trim()
+                : '';
 
-        if (typeof content !== 'string' || !content.trim()) {
+        const files = req.files || [];
+
+        if (!content && files.length === 0) {
             return res.status(400).json({
-                message: 'Post content is required.'
+                message: 'Add some text or upload a photo or video.'
             });
         }
 
-        if (content.trim().length > 5000) {
+        if (content.length > 5000) {
             return res.status(400).json({
                 message: 'Post content cannot exceed 5000 characters.'
             });
         }
 
+        const media = files.map((file) => ({
+            url: `/uploads/${file.filename}`,
+            type: file.mimetype.startsWith('video/')
+                ? 'video'
+                : 'image'
+        }));
+
         const post = await Post.create({
             author: req.userId,
-            content: content.trim()
+            content,
+            media
         });
 
         await post.populate('author', 'username');
@@ -37,6 +52,7 @@ const createPost = async (req, res) => {
         });
     }
 };
+
 
 
 const getPosts = async (req, res) => {
@@ -223,11 +239,75 @@ const deletePost = async (req, res) => {
     }
 };
 
+const getFeed = async (req, res) => {
+    try {
+        const page = Number.parseInt(req.query.page, 10) || 1;
+        const limit = Number.parseInt(req.query.limit, 10) || 10;
 
+        if (
+            !Number.isInteger(page) ||
+            !Number.isInteger(limit) ||
+            page < 1 ||
+            limit < 1 ||
+            limit > 50
+        ) {
+            return res.status(400).json({
+                message: 'Page must be positive and limit must be between 1 and 50.'
+            });
+        }
+
+        const skip = (page - 1) * limit;
+
+        const following = await Follow.find({
+            follower: req.userId
+        }).select('following');
+
+        const followingIds = following.map(
+            (follow) => follow.following
+        );
+
+        const feedUserIds = [
+            req.userId,
+            ...followingIds
+        ];
+
+        const [posts, totalPosts] = await Promise.all([
+            Post.find({
+                author: { $in: feedUserIds }
+            })
+                .populate('author', 'username')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+
+            Post.countDocuments({
+                author: { $in: feedUserIds }
+            })
+        ]);
+
+        return res.status(200).json({
+            message: 'Feed retrieved successfully!',
+            pagination: {
+                page,
+                limit,
+                totalPosts,
+                totalPages: Math.ceil(totalPosts / limit)
+            },
+            posts
+        });
+    } catch (error) {
+        console.error('Get feed error:', error.message);
+
+        return res.status(500).json({
+            message: 'Could not retrieve feed.'
+        });
+    }
+};
 module.exports = {
     createPost,
     getPosts,
     getPostById,
     updatePost,
-    deletePost
+    deletePost,
+    getFeed
 };

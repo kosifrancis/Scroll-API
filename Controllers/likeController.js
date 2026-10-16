@@ -1,7 +1,8 @@
 
 const mongoose = require('mongoose');
 const Like = require('../Models/Like');
-const Post = require('../Models/post');
+const Post = require('../Models/Post');
+const Notification = require('../Models/Notification');
 
 const likePost = async (req, res) => {
     try {
@@ -13,11 +14,9 @@ const likePost = async (req, res) => {
             });
         }
 
-        const postExists = await Post.exists({
-            _id: postId
-        });
+        const post = await Post.findById(postId).select('author');
 
-        if (!postExists) {
+        if (!post) {
             return res.status(404).json({
                 message: 'Post not found.'
             });
@@ -29,7 +28,6 @@ const likePost = async (req, res) => {
                 post: postId
             });
         } catch (error) {
-            // MongoDB duplicate-key error
             if (error.code === 11000) {
                 return res.status(409).json({
                     message: 'You have already liked this post.'
@@ -37,6 +35,25 @@ const likePost = async (req, res) => {
             }
 
             throw error;
+        }
+
+        // Don't notify users about likes on their own posts.
+        if (post.author.toString() !== req.userId.toString()) {
+            try {
+                await Notification.create({
+                    recipient: post.author,
+                    sender: req.userId,
+                    type: 'like',
+                    post: post._id,
+                    message: 'Someone liked your post.'
+                });
+            } catch (notificationError) {
+                // Keep the successful like even if notification creation fails.
+                console.error(
+                    'Like notification error:',
+                    notificationError.message
+                );
+            }
         }
 
         return res.status(201).json({

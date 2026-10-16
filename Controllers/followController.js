@@ -2,8 +2,9 @@
 const mongoose = require('mongoose');
 const Follow = require('../Models/Follow');
 const User = require('../Models/User');
+const Notification = require('../Models/Notification');
 
-// FOLLOW A USER
+
 const followUser = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -34,6 +35,21 @@ const followUser = async (req, res) => {
             following: userId
         });
 
+        // Create a notification for the user being followed.
+        try {
+            await Notification.create({
+                recipient: userId,
+                sender: followerId,
+                type: 'follow',
+                message: 'Someone started following you.'
+            });
+        } catch (notificationError) {
+            console.error(
+                'Follow notification error:',
+                notificationError
+            );
+        }
+
         return res.status(201).json({
             message: 'User followed successfully.',
             follow
@@ -52,6 +68,7 @@ const followUser = async (req, res) => {
         });
     }
 };
+
 
 
 // UNFOLLOW A USER

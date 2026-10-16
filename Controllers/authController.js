@@ -81,6 +81,85 @@ const loginUser = async (req, res) => {
     }
 };
 
+
+const registerUser = async (req, res) => {
+    try {
+        const { username, email, password, age } = req.body;
+
+        if (
+            typeof username !== 'string' ||
+            !username.trim() ||
+            typeof email !== 'string' ||
+            !email.trim() ||
+            typeof password !== 'string' ||
+            password.length < 6 ||
+            age === undefined ||
+            age === null ||
+            age === ''
+        ) {
+            return res.status(400).json({
+                message: 'Please provide a username, valid email, password of at least 6 characters, and age.'
+            });
+        }
+
+        const parsedAge = Number(age);
+
+        if (!Number.isInteger(parsedAge) || parsedAge < 13 || parsedAge > 120) {
+            return res.status(400).json({
+                message: 'Age must be a whole number between 13 and 120.'
+            });
+        }
+
+        const normalizedUsername = username.trim();
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const existingUser = await User.findOne({
+            $or: [
+                { username: normalizedUsername },
+                { email: normalizedEmail }
+            ]
+        });
+
+        if (existingUser) {
+            return res.status(409).json({
+                message: 'That username or email is already registered.'
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        const user = await User.create({
+            username: normalizedUsername,
+            email: normalizedEmail,
+            password: hashedPassword,
+            age: parsedAge
+        });
+
+        return res.status(201).json({
+            message: 'Account created successfully!',
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                age: user.age
+            }
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: 'That username or email is already registered.'
+            });
+        }
+
+        console.error('Registration error:', error.message);
+
+        return res.status(500).json({
+            message: 'Could not create your account.'
+        });
+    }
+};
+
 module.exports = {
-    loginUser
+    loginUser,
+    registerUser
 };

@@ -1,7 +1,8 @@
 
 const mongoose = require('mongoose');
-const Comment = require('../Models/comment');
-const Post = require('../Models/post');
+const Comment = require('../Models/Comment');
+const Post = require('../Models/Post');
+const Notification = require('../Models/Notification');
 
 // CREATE A COMMENT
 const createComment = async (req, res) => {
@@ -21,11 +22,11 @@ const createComment = async (req, res) => {
             content.trim().length > 2000
         ) {
             return res.status(400).json({
-                message: 'Comment must contain 1–2000 characters.'
+                message: 'Comment must contain between 1 and 2,000 characters.'
             });
         }
 
-        const post = await Post.findById(postId);
+        const post = await Post.findById(postId).select('author');
 
         if (!post) {
             return res.status(404).json({
@@ -40,6 +41,25 @@ const createComment = async (req, res) => {
         });
 
         await comment.populate('author', 'username');
+
+        // Notify the post's author, but not when they comment on their own post.
+        if (post.author.toString() !== req.userId.toString()) {
+            try {
+                await Notification.create({
+                    recipient: post.author,
+                    sender: req.userId,
+                    type: 'comment',
+                    post: post._id,
+                    message: 'Someone commented on your post.'
+                });
+            } catch (notificationError) {
+                // A notification failure should not undo the successful comment.
+                console.error(
+                    'Comment notification error:',
+                    notificationError.message
+                );
+            }
+        }
 
         return res.status(201).json({
             message: 'Comment created successfully.',
@@ -130,7 +150,7 @@ const updateComment = async (req, res) => {
             content.trim().length > 2000
         ) {
             return res.status(400).json({
-                message: 'Comment must contain 1–2000 characters.'
+                message: 'Comment must contain between 1 and 2,000 characters.'
             });
         }
 

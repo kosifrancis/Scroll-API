@@ -10,13 +10,27 @@ const postSchema = new mongoose.Schema({
 
     content: {
         type: String,
-        required: true,
         trim: true,
-        maxlength: 5000
-    }
+        maxlength: 5000,
+        default: ''
+    },
+
+    media: [{
+        url: {
+            type: String,
+            required: true
+        },
+
+        type: {
+            type: String,
+            enum: ['image', 'video'],
+            required: true
+        }
+    }]
 }, {
     timestamps: true
 });
 
-module.exports = mongoose.model('Post', postSchema);
-
+module.exports =
+    mongoose.models.Post ||
+    mongoose.model('Post', postSchema);
