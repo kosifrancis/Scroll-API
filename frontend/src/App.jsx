@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   apiRequest,
   createPost,
@@ -65,6 +65,9 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
     spark: <><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z" /><path d="m19 14 1.2 2.8L23 18l-2.8 1.2L19 22l-1.2-2.8L15 18l2.8-1.2L19 14Z" /></>,
     logOut: <><path d="M10 17l5-5-5-5m5 5H3" /><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" /></>,
     arrow: <><path d="M5 12h14m-7-7 7 7-7 7" /></>,
+    volume: <><path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></>,
+    mute: <><path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="m16 9 5 6m0-6-5 6" /></>,
+    music: <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">{paths[name] || paths.spark}</svg>;
 }
@@ -128,35 +131,65 @@ function AuthModal({ mode, setMode, onClose, onSuccess }) {
 }
 
 function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare, onFollow, following }) {
+  const videoRef = useRef(null);
+  const [muted, setMuted] = useState(true);
+  const [playing, setPlaying] = useState(true);
   const author = post.author?.username || post.author?.name || 'scroll creator';
   const media = post.media?.[0];
   const mediaUrl = assetUrl(media?.url || post.image);
   const likes = Number(post.likesCount ?? post.likes ?? 0) + (liked ? 1 : 0);
   const comments = Number(post.commentsCount ?? post.commentCount ?? 0);
+  const isVideo = media?.type === 'video';
+
+  useEffect(() => {
+    if (!isVideo || !videoRef.current) return undefined;
+    const video = videoRef.current;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      } else {
+        video.pause();
+        setPlaying(false);
+      }
+    }, { threshold: 0.65 });
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [isVideo, mediaUrl]);
+
+  function togglePlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    else { video.pause(); setPlaying(false); }
+  }
 
   return (
-    <article className="post-card">
-      <header className="post-head">
-        <div className={`avatar avatar-${(author.length % 4) + 1}`}>{initials(author)}</div>
-        <div className="post-author"><strong>{author}</strong><span>{formatTime(post.createdAt)} ago <span className="dot-separator">·</span> <span className="globe">◉</span></span></div>
-        {user?.username !== author && <button className={`follow-button ${following ? 'is-following' : ''}`} onClick={() => onFollow(post)}>{following ? <><Icon name="check" size={14} /> Following</> : 'Follow'}</button>}
-        <button className="icon-button post-more" aria-label="More post options" onClick={() => onShare(post)}><Icon name="more" /></button>
-      </header>
-      {post.content && <p className="post-copy">{post.content}</p>}
-      {mediaUrl ? <div className="post-media-wrap">
-        {media?.type === 'video' ? <video className="post-media" src={mediaUrl} controls playsInline preload="metadata" /> : <img className="post-media" src={mediaUrl} alt={`A post shared by ${author}`} loading="lazy" />}
-      </div> : <div className={`post-art post-art-${(String(post._id).length % 3) + 1}`}><span className="art-kicker">A thought worth keeping</span><p>{post.content}</p><span className="art-spark">✳</span></div>}
-      <div className="post-reactions"><span>{likes > 0 ? `${likes.toLocaleString()} ${likes === 1 ? 'like' : 'likes'}` : 'Be the first to like this'}</span><button onClick={() => onComment(post)}>{comments > 0 ? `${comments} comments` : 'Start a conversation'}</button></div>
-      <div className="post-actions">
-        <button className={liked ? 'action-liked' : ''} onClick={() => onLike(post)} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><Icon name="heart" size={20} /> <span>{liked ? 'Liked' : 'Like'}</span></button>
-        <button onClick={() => onComment(post)}><Icon name="comment" size={19} /><span>Comment</span></button>
-        <button onClick={() => onShare(post)}><Icon name="share" size={19} /><span>Share</span></button>
-        <button className={`save-action ${saved ? 'action-saved' : ''}`} onClick={() => onSave(post)} aria-label={saved ? 'Remove from saved' : 'Save post'} aria-pressed={saved}><Icon name="bookmark" size={19} /></button>
+    <article className="post-card" id={post._id}>
+      <div className="post-media-wrap" onDoubleClick={(event) => { if (!event.target.closest('button') && !liked) onLike(post); }}>
+        {mediaUrl ? (isVideo
+          ? <video ref={videoRef} className="post-media" src={mediaUrl} muted={muted} loop autoPlay playsInline preload="metadata" onClick={togglePlayback} aria-label={`Short video by ${author}`} />
+          : <img className="post-media" src={mediaUrl} alt={`A post shared by ${author}`} loading="lazy" />)
+          : <div className={`post-art post-art-${(String(post._id).length % 3) + 1}`}><span className="art-kicker">A thought worth keeping</span><p>{post.content}</p><span className="art-spark">✳</span></div>}
+        <div className="post-shade" />
+        <header className="post-head">
+          <div className={`avatar avatar-${(author.length % 4) + 1}`}>{initials(author)}</div>
+          <div className="post-author"><strong>@{author}</strong><span>{formatTime(post.createdAt)} ago · <span className="globe">Public</span></span></div>
+          {user?.username !== author && <button className={`follow-button ${following ? 'is-following' : ''}`} onClick={() => onFollow(post)}>{following ? <><Icon name="check" size={14} /> Following</> : 'Follow'}</button>}
+          <button className="icon-button post-more" aria-label="More post options" onClick={() => onShare(post)}><Icon name="more" /></button>
+        </header>
+        {isVideo && <button className={`video-playback ${playing ? 'is-playing' : ''}`} onClick={togglePlayback} aria-label={playing ? 'Pause video' : 'Play video'}><Icon name="play" size={27} /></button>}
+        <div className="post-caption"><p>{post.content || 'A moment worth sharing.'}</p><span className="post-sound"><Icon name={isVideo ? 'music' : 'image'} size={14} /> {isVideo ? 'Original sound' : 'Photo'} · {author}</span></div>
+        <div className="post-actions" aria-label="Short video actions">
+          <button className={`short-action ${liked ? 'action-liked' : ''}`} onClick={() => onLike(post)} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><Icon name="heart" size={25} /><span>{likes ? likes > 999 ? `${(likes / 1000).toFixed(1)}K` : likes : 'Like'}</span></button>
+          <button className="short-action" onClick={() => onComment(post)} aria-label="View comments"><Icon name="comment" size={24} /><span>{comments > 999 ? `${(comments / 1000).toFixed(1)}K` : comments || 'Comment'}</span></button>
+          <button className="short-action" onClick={() => onShare(post)} aria-label="Share post"><Icon name="share" size={24} /><span>Share</span></button>
+          <button className={`short-action ${saved ? 'action-saved' : ''}`} onClick={() => onSave(post)} aria-label={saved ? 'Remove from saved' : 'Save post'} aria-pressed={saved}><Icon name="bookmark" size={23} /><span>{saved ? 'Saved' : 'Save'}</span></button>
+          {isVideo && <button className="short-action sound-action" onClick={() => { const nextMuted = !muted; setMuted(nextMuted); if (videoRef.current) videoRef.current.muted = nextMuted; }} aria-label={muted ? 'Unmute video' : 'Mute video'}><Icon name={muted ? 'mute' : 'volume'} size={21} /><span>Sound</span></button>}
+        </div>
       </div>
     </article>
   );
 }
-
 function RightRail({ onCreate, onAuth, signedIn, apiOnline, user }) {
   const trends = [
     { category: 'Photography · 2.4k posts', title: 'Little things, lately', tag: '#littlethings' },
@@ -379,7 +412,7 @@ function App() {
     finally { setSearching(false); }
   }
 
-  const currentTitle = activeNav === 'saved' ? 'Saved for later' : activeNav === 'following' ? 'Your people' : activeNav === 'explore' ? 'A little inspiration' : 'Your daily dose';
+  const currentTitle = activeNav === 'saved' ? 'Saved Shorts' : activeNav === 'following' ? 'Following' : activeNav === 'explore' ? 'Explore Shorts' : 'For You';
 
   return <div className="scroll-app">
     <aside className="left-rail">
@@ -396,14 +429,13 @@ function App() {
     <main className="main-column">
       <div className="topbar"><div className="breadcrumb"><span>Home</span><span>/</span><strong>{navItems.find((item) => item.id === activeNav)?.label || 'Notifications'}</strong></div><form className="search-box" onSubmit={submitSearch}><Icon name="search" size={17} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a little inspiration" aria-label="Search Scroll" /><span className="search-shortcut">↵</span></form>{user ? <button className="topbar-user" onClick={signOut} title="Sign out"><div className="avatar avatar-1">{initials(user.username)}</div></button> : <button className="button button-light topbar-join" onClick={() => openAuth('login')}>Sign in</button>}</div>
 
-      <section className="feed-heading"><div><span className="eyebrow"><span className="sun-dot" /> A GOOD PLACE TO LAND</span><h1>{currentTitle}<span className="heading-period">.</span></h1><p>Things worth pausing for, from people worth knowing.</p></div><button className="new-post-button" aria-label="Write a post" onClick={() => { if (apiOnline && !token) openAuth('signup'); else setComposerOpen(true); }}><Icon name="plus" size={17} /> <span>Write a post</span></button></section>
+      <section className="feed-heading"><div><span className="eyebrow"><span className="sun-dot" /> SHORT VIDEOS · GOOD STORIES</span><h1>{currentTitle}<span className="heading-period">.</span></h1><p>Swipe through something new. Stay for what moves you.</p></div><button className="new-post-button" aria-label="Create a Short" onClick={() => { if (apiOnline && !token) openAuth('signup'); else setComposerOpen(true); }}><Icon name="plus" size={17} /> <span>Create</span></button></section>
 
       <div className="feed-toolbar"><div className="feed-tabs"><button className={tab === 'For you' ? 'feed-tab-active' : ''} onClick={() => { setTab('For you'); setActiveNav('for-you'); }}><Icon name="spark" size={15} /> For you</button><button className={tab === 'Following' ? 'feed-tab-active' : ''} onClick={() => { setTab('Following'); setActiveNav('following'); }}><Icon name="users" size={16} /> Following</button></div><span className={`connection-label ${apiOnline ? 'connected' : ''}`}><i />{apiOnline ? 'Community feed' : 'Preview mode'}</span></div>
 
       {search && <div className="search-results-panel"><div className="search-result-head"><div><span className="eyebrow">LOOKING FOR</span><h2>“{search}”</h2></div><button className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); }} aria-label="Clear search"><Icon name="close" /></button></div>{searching && <p className="search-placeholder">Finding a few good things…</p>}{searchResults && !searching && (searchResults.posts?.length || searchResults.users?.length ? <><div className="search-result-tags">{searchResults.users?.length ? <span>{searchResults.users.length} people</span> : null}{searchResults.posts?.length ? <span>{searchResults.posts.length} posts</span> : null}</div>{searchResults.users?.map((person) => <div className="search-person" key={person._id}><div className="avatar avatar-2">{initials(person.username)}</div><strong>{person.username}</strong><span>on Scroll</span></div>)}</> : <div className="search-placeholder"><span>☁</span><strong>No matches just yet.</strong><p>{searchResults.preview ? 'Connect the Scroll API to search the wider community.' : 'Try another word or explore the feed below.'}</p></div>)}</div>}
 
       {!search && <>
-        <section className="story-strip" aria-label="People to discover"><div className="story-intro"><span className="story-spark">✳</span><span><strong>A little inspiration</strong><small>from the community</small></span></div>{[['N','nora.ontheroad','story-1'],['M','milesmakes','story-2'],['J','junipercooks','story-3'],['A','ari.in.bloom','story-4'],['S','sunday.studio','story-5']].map(([letter, name, color]) => <button className="story-person" key={name} onClick={() => showToast(`Discover ${name} when the community feed is connected.`)}><span className={`story-avatar ${color}`}><span>{letter}</span><i>+</i></span><small>{name}</small></button>)}</section>
         {activeNav === 'notifications' ? <section className="empty-state"><span className="empty-illustration"><Icon name="bell" size={31} /></span><span className="eyebrow">A quiet moment</span><h2>You’re all caught up.</h2><p>When someone likes or comments on something you share, you’ll find it right here.</p><button className="button button-light" onClick={() => selectNav(navItems[0])}>Back to your feed</button></section> : loading ? <div className="loading-state"><span className="loader" /><p>Gathering the good stuff…</p></div> : visiblePosts.length ? <div className="post-list">{visiblePosts.map((post) => <PostCard key={post._id} post={post} user={user} liked={likedIds.has(post._id)} saved={savedIds.has(post._id)} following={followingIds.has(post.author?._id || post.author?.username)} onLike={toggleLike} onSave={toggleSave} onComment={(item) => setCommentPost(item)} onShare={sharePost} onFollow={toggleFollow} />)}</div> : <div className="empty-state"><span className="empty-illustration"><Icon name={activeNav === 'saved' ? 'bookmark' : 'spark'} size={31} /></span><span className="eyebrow">A fresh start</span><h2>{activeNav === 'saved' ? 'Nothing tucked away yet.' : activeNav === 'following' ? 'Your circle is waiting.' : 'It’s a little quiet here.'}</h2><p>{activeNav === 'saved' ? 'Save a post that speaks to you and it will be right here.' : activeNav === 'following' ? 'Find a creator whose corner of the world you love and follow along.' : 'There is always a first story. Share yours or come back in a little while.'}</p><button className="button button-primary" onClick={() => activeNav === 'following' ? setActiveNav('explore') : setComposerOpen(true)}>{activeNav === 'following' ? 'Explore the community' : 'Share a little something'} <Icon name="arrow" size={16} /></button></div>}
         {!loading && activeNav !== 'notifications' && visiblePosts.length > 0 && <div className="feed-end"><span>✳</span><p>You’re all caught up for now.</p><small>Take a breath. The good stuff will still be here.</small></div>}
       </>}
