@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: scroll-api-kosifrancis
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://kosifrancis.github.io
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URI
+        sync: false

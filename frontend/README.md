@@ -13,7 +13,9 @@ Vite proxies `/api` and `/uploads` to `http://localhost:3000`. Start the API wit
 
 ## Connect a hosted API
 
-Set `VITE_API_URL` to the public API origin (or origin ending in `/api`) before building. For GitHub Actions, add a repository Actions variable named `VITE_API_URL`. Configure the API's `FRONTEND_URL` to `https://kosifrancis.github.io` and set its `CORS_ORIGINS` when the site uses a different origin.
+The repository includes a Render Blueprint in `render.yaml` for the Express API. Deploy it from Render and provide `MONGO_URI` in Render's dashboard; Render generates `JWT_SECRET`. The API allows requests from the GitHub Pages origin.
+
+After the API is deployed, add its public origin (for example, `https://your-api.onrender.com`) as the GitHub Actions repository variable `VITE_API_URL` under **Settings → Secrets and variables → Actions → Variables**. Then run the **Publish Scroll frontend** workflow again. The build adds `/api` automatically, so enter only the origin. Until that variable is configured, the frontend stays in preview mode and explains that the API URL is missing when someone tries to sign in.
 
 ## Publish on GitHub Pages
 
