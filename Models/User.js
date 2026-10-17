@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema(
             required: true,
             min: 13,
             max: 120
+        },
+        profilePicture: {
+            type: String,
+            default: ''
         }
     },
     {
@@ -30,3 +34,4 @@ const userSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('User', userSchema);    
+

@@ -136,6 +136,31 @@ const getPostById = async (req, res) => {
     }
 };
 
+const recordPostView = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({ message: 'Invalid post ID.' });
+        }
+
+        const post = await Post.findByIdAndUpdate(
+            id,
+            { $inc: { viewsCount: 1 } },
+            { new: true, projection: { viewsCount: 1 } }
+        );
+
+        if (!post) {
+            return res.status(404).json({ message: 'Post not found.' });
+        }
+
+        return res.status(200).json({ viewsCount: post.viewsCount });
+    } catch (error) {
+        console.error('Record post view error:', error.message);
+        return res.status(500).json({ message: 'Could not record this view.' });
+    }
+};
+
 
 const updatePost = async (req, res) => {
     try {
@@ -307,7 +332,9 @@ module.exports = {
     createPost,
     getPosts,
     getPostById,
+    recordPostView,
     updatePost,
     deletePost,
     getFeed
 };
+

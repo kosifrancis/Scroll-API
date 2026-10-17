@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const User = require('../Models/User');
 const Post = require('../Models/Post');
 const Follow = require('../Models/Follow');
+const Like = require('../Models/Like');
 
 const getMyProfile = async (req, res) => {
     try {
@@ -15,9 +16,34 @@ const getMyProfile = async (req, res) => {
             });
         }
 
+        const [allPosts, posts, followersCount, followingCount] = await Promise.all([
+            Post.find({ author: req.userId }).select('_id').lean(),
+            Post.find({ author: req.userId }).sort({ createdAt: -1 }).limit(60).lean(),
+            Follow.countDocuments({ following: req.userId }),
+            Follow.countDocuments({ follower: req.userId })
+        ]);
+        const postIds = allPosts.map((post) => post._id);
+        const [totalLikes, viewTotals] = await Promise.all([
+            postIds.length ? Like.countDocuments({ post: { $in: postIds } }) : 0,
+            Post.aggregate([
+                { $match: { author: new mongoose.Types.ObjectId(req.userId) } },
+                { $group: { _id: null, total: { $sum: { $ifNull: ['$viewsCount', 0] } } } }
+            ])
+        ]);
+        const profile = {
+            ...user.toObject(),
+            posts,
+            postsCount: allPosts.length,
+            followersCount,
+            followingCount,
+            totalLikes,
+            totalViews: viewTotals[0]?.total || 0
+        };
+
         return res.status(200).json({
             message: 'Profile retrieved successfully!',
-            user
+            user,
+            profile
         });
     } catch (error) {
         console.error('Profile error:', error.message);
@@ -25,6 +51,28 @@ const getMyProfile = async (req, res) => {
         return res.status(500).json({
             message: 'Could not retrieve your profile.'
         });
+    }
+};
+
+const updateMyProfilePicture = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'Choose an image for your profile photo.' });
+        }
+
+        const user = await User.findById(req.userId).select('-password');
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+
+        user.profilePicture = `/uploads/${req.file.filename}`;
+        await user.save();
+
+        return res.status(200).json({
+            message: 'Profile photo updated successfully.',
+            user
+        });
+    } catch (error) {
+        console.error('Profile photo update error:', error.message);
+        return res.status(500).json({ message: 'Could not update your profile photo.' });
     }
 };
 
@@ -168,5 +216,7 @@ const getUserProfile = async (req, res) => {
 module.exports = {
     getMyProfile,
     updateMyProfile,
+    updateMyProfilePicture,
     getUserProfile
 };
+

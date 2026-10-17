@@ -8,6 +8,9 @@ import {
   getPosts,
   loginUser,
   registerUser,
+  recordPostView,
+  updateMyProfile,
+  uploadProfilePicture,
 } from './api/postApi';
 
 const demoPosts = [
@@ -48,6 +51,7 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
   const paths = {
     home: <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-6h6v6" /></>,
     users: <><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
     compass: <><circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" /></>,
     bookmark: <><path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4V4.5Z" /></>,
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
@@ -76,6 +80,93 @@ function initials(name = 'you') {
   return name.trim().slice(0, 1).toUpperCase();
 }
 
+function UserAvatar({ user, className = 'avatar' }) {
+  const photo = assetUrl(user?.profilePicture);
+  return <span className={`user-avatar ${className}`} aria-label={user?.username ? `${user.username}'s profile photo` : 'Profile'}>
+    {photo ? <img src={photo} alt="" /> : user?.username ? initials(user.username) : <Icon name="user" />}
+  </span>;
+}
+
+function SplashScreen() {
+  return <main className="splash-screen" aria-label="Opening Scroll">
+    <span className="splash-wordmark">scroll<span>.</span></span>
+    <span className="splash-orbit splash-orbit-one" />
+    <span className="splash-orbit splash-orbit-two" />
+    <span className="splash-progress" />
+  </main>;
+}
+
+function formatCount(value = 0) {
+  return new Intl.NumberFormat('en', { notation: Number(value) >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(Number(value) || 0);
+}
+
+function ProfilePage({ user, profile, loading, photoBusy, onClose, onUploadPhoto, onSaveProfile, onSignOut }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState({ username: user?.username || '', age: user?.age || '' });
+  const profileUser = profile || user || {};
+  const posts = profileUser.posts || [];
+  const stats = [
+    { label: 'Posts', value: profileUser.postsCount ?? posts.length },
+    { label: 'Followers', value: profileUser.followersCount ?? 0 },
+    { label: 'Following', value: profileUser.followingCount ?? 0 },
+    { label: 'Views', value: profileUser.totalViews ?? 0 },
+    { label: 'Likes', value: profileUser.totalLikes ?? 0 },
+  ];
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      if (await onSaveProfile({ username: draft.username.trim(), age: Number(draft.age) })) setEditing(false);
+    } finally { setSaving(false); }
+  }
+
+  return <div className="profile-page">
+    <main className="profile-page-inner">
+      <header className="profile-page-topbar">
+        <button className="profile-back" onClick={onClose}><Icon name="arrow" size={19} /> Back to feed</button>
+        <h1>Your profile</h1>
+        <button className="profile-logout" onClick={onSignOut}><Icon name="logOut" size={18} /> Sign out</button>
+      </header>
+
+      <section className="profile-hero">
+        <label className={`profile-photo-control ${photoBusy ? 'is-busy' : ''}`}>
+          <UserAvatar user={profileUser} className="profile-photo-large" />
+          <span>{photoBusy ? 'Updating…' : 'Change photo'}</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={photoBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadPhoto(file); event.target.value = ''; }} />
+        </label>
+        <div className="profile-intro">
+          <span className="eyebrow">YOUR SPACE</span>
+          <h2>{profileUser.username || 'Your profile'}</h2>
+          <p>Member since {profileUser.createdAt ? new Date(profileUser.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'today'}</p>
+          <button className="button button-light profile-edit-toggle" onClick={() => setEditing((value) => !value)}>{editing ? 'Cancel edit' : 'Edit profile'}</button>
+        </div>
+      </section>
+
+      <section className="profile-stats" aria-label="Profile statistics">
+        {stats.map((stat) => <div className="profile-stat" key={stat.label}><strong>{formatCount(stat.value)}</strong><span>{stat.label}</span></div>)}
+      </section>
+
+      {editing && <form className="profile-edit-form" onSubmit={saveProfile}>
+        <label>Username<input value={draft.username} required minLength={1} maxLength={30} onChange={(event) => setDraft((value) => ({ ...value, username: event.target.value }))} /></label>
+        <label>Age<input type="number" min="13" max="120" step="1" value={draft.age} required onChange={(event) => setDraft((value) => ({ ...value, age: event.target.value }))} /></label>
+        <button className="button button-primary" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+      </form>}
+
+      <section className="profile-posts">
+        <header><div><span className="eyebrow">YOUR MOMENTS</span><h2>Posts</h2></div><span>{formatCount(profileUser.postsCount ?? posts.length)} total</span></header>
+        {loading ? <div className="profile-loading">Loading your profile…</div> : posts.length ? <div className="profile-post-grid">{posts.map((post) => {
+          const media = post.media?.[0];
+          return <article className="profile-post-tile" key={post._id}>
+            {media?.type === 'image' ? <img src={assetUrl(media.url)} alt="" loading="lazy" /> : media?.type === 'video' ? <video src={assetUrl(media.url)} muted playsInline preload="metadata" /> : <div className="profile-post-art"><Icon name="spark" /><p>{post.content}</p></div>}
+          </article>;
+        })}</div> : <div className="profile-empty"><Icon name="spark" size={24} /><strong>Your first post will live here.</strong><span>Share a moment from your feed to start your profile.</span></div>}
+      </section>
+    </main>
+  </div>;
+}
+
 function formatTime(date) {
   const time = new Date(date || Date.now()).getTime();
   const minutes = Math.max(1, Math.floor((Date.now() - time) / 60000));
@@ -84,7 +175,7 @@ function formatTime(date) {
   return `${Math.floor(minutes / 1440)}d`;
 }
 
-function AuthModal({ mode, setMode, onClose, onSuccess }) {
+function AuthModal({ mode, setMode, onClose, onSuccess, standalone = false }) {
   const [form, setForm] = useState({ username: '', email: '', password: '', age: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -107,10 +198,9 @@ function AuthModal({ mode, setMode, onClose, onSuccess }) {
   }
 
   return (
-    <div className="modal-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-heading">
-        <button className="icon-button auth-close" type="button" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
-        <div className="auth-mark"><span className="brand-mark">s</span></div>
+    <div className={standalone ? 'auth-page' : 'modal-scrim'} onMouseDown={(event) => !standalone && event.target === event.currentTarget && onClose()}>
+      <section className={`auth-card ${standalone ? 'auth-card-page' : ''}`} role="dialog" aria-modal="true" aria-labelledby="auth-heading">
+        {!standalone && <button className="icon-button auth-close" type="button" onClick={onClose} aria-label="Close"><Icon name="close" /></button>}
         <span className="eyebrow">A little more you</span>
         <h2 id="auth-heading">{signup ? 'Find your people.' : 'Good to see you.'}</h2>
         <p className="auth-intro">{signup ? 'Make a little space for what inspires you.' : 'Pick up right where your people left off.'}</p>
@@ -131,8 +221,9 @@ function AuthModal({ mode, setMode, onClose, onSuccess }) {
   );
 }
 
-function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare, onFollow, following }) {
+function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare, onFollow, onView, following }) {
   const videoRef = useRef(null);
+  const cardRef = useRef(null);
   const [muted, setMuted] = useState(true);
   const [playing, setPlaying] = useState(true);
   const author = post.author?.username || post.author?.name || 'scroll creator';
@@ -141,21 +232,25 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
   const likes = Number(post.likesCount ?? post.likes ?? 0) + (liked ? 1 : 0);
   const comments = Number(post.commentsCount ?? post.commentCount ?? 0);
   const isVideo = media?.type === 'video';
+  const postId = post._id;
+  const isDemo = post.demo;
 
   useEffect(() => {
-    if (!isVideo || !videoRef.current) return undefined;
+    const card = cardRef.current;
+    if (!card) return undefined;
     const video = videoRef.current;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
-        video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-      } else {
+        onView({ _id: postId, demo: isDemo });
+        if (video) video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+      } else if (video) {
         video.pause();
         setPlaying(false);
       }
     }, { threshold: 0.65 });
-    observer.observe(video);
+    observer.observe(card);
     return () => observer.disconnect();
-  }, [isVideo, mediaUrl]);
+  }, [isDemo, isVideo, mediaUrl, onView, postId]);
 
   function togglePlayback() {
     const video = videoRef.current;
@@ -165,7 +260,7 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
   }
 
   return (
-    <article className="post-card" id={post._id}>
+    <article ref={cardRef} className="post-card" id={post._id}>
       <div className="post-media-wrap" onDoubleClick={(event) => { if (!event.target.closest('button') && !liked) onLike(post); }}>
         {mediaUrl ? (isVideo
           ? <video ref={videoRef} className="post-media" src={mediaUrl} muted={muted} loop autoPlay playsInline preload="metadata" onClick={togglePlayback} aria-label={`Short video by ${author}`} />
@@ -259,10 +354,52 @@ function App() {
   const [toast, setToast] = useState('');
   const [posting, setPosting] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [appStage, setAppStage] = useState('splash');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileData, setProfileData] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   const showToast = useCallback((message) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2800);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const storedToken = localStorage.getItem('scroll_token') || '';
+      let storedUser = null;
+      try { storedUser = JSON.parse(localStorage.getItem('scroll_user') || 'null'); } catch { /* Recover below. */ }
+      if (!storedToken) {
+        if (active) setAppStage('auth');
+        return;
+      }
+      try {
+        const result = await apiRequest('/profile/me', { token: storedToken });
+        if (!active) return;
+        const verifiedUser = result.user || storedUser;
+        setToken(storedToken);
+        setUser(verifiedUser);
+        if (verifiedUser) localStorage.setItem('scroll_user', JSON.stringify(verifiedUser));
+        setAppStage(verifiedUser ? 'feed' : 'auth');
+      } catch (error) {
+        if (!active) return;
+        if (error.status === 401 || error.status === 403 || !storedUser) {
+          localStorage.removeItem('scroll_token');
+          localStorage.removeItem('scroll_user');
+          setToken('');
+          setUser(null);
+          setAppStage('auth');
+        } else {
+          setToken(storedToken);
+          setUser(storedUser);
+          setAppStage('feed');
+        }
+      }
+    }, 1150);
+    return () => { active = false; window.clearTimeout(timer); };
   }, []);
 
   const loadPosts = useCallback(async () => {
@@ -286,6 +423,60 @@ function App() {
       setApiOnline(false);
     } finally { setLoading(false); }
   }, [token, activeNav]);
+
+  const loadProfile = useCallback(async () => {
+    if (!token) return;
+    setProfileLoading(true);
+    try {
+      const result = await apiRequest('/profile/me', { token });
+      const nextProfile = result.profile || result.user;
+      setProfileData(nextProfile || null);
+      if (result.user) {
+        setUser(result.user);
+        localStorage.setItem('scroll_user', JSON.stringify(result.user));
+      }
+    } catch (error) { showToast(error.message || 'Could not load your profile.'); }
+    finally { setProfileLoading(false); }
+  }, [token, showToast]);
+
+  const recordView = useCallback((post) => {
+    if (post.demo || !post._id || sessionStorage.getItem(`scroll_viewed_${post._id}`)) return;
+    sessionStorage.setItem(`scroll_viewed_${post._id}`, '1');
+    recordPostView(post._id).catch(() => {});
+  }, []);
+
+  function openProfile() {
+    if (!token) { openAuth('login'); return; }
+    setProfileOpen(true);
+    loadProfile();
+  }
+
+  async function saveProfile(changes) {
+    try {
+      const result = await updateMyProfile(changes, token);
+      const updatedUser = result.user;
+      setUser(updatedUser);
+      setProfileData((current) => ({ ...current, ...updatedUser }));
+      localStorage.setItem('scroll_user', JSON.stringify(updatedUser));
+      showToast('Your profile is up to date.');
+      return true;
+    } catch (error) { showToast(error.message || 'Could not save your profile.'); return false; }
+  }
+
+  async function changeProfilePicture(file) {
+    if (!file.type.startsWith('image/')) { showToast('Choose an image for your profile photo.'); return; }
+    if (file.size > 5 * 1024 * 1024) { showToast('Choose a photo smaller than 5 MB.'); return; }
+    setPhotoBusy(true);
+    try {
+      const result = await uploadProfilePicture(file, token);
+      const updatedUser = result.user;
+      setUser(updatedUser);
+      setProfileData((current) => ({ ...current, ...updatedUser }));
+      localStorage.setItem('scroll_user', JSON.stringify(updatedUser));
+      showToast('Profile photo updated.');
+    } catch (error) { showToast(error.message || 'Could not update your profile photo.'); }
+    finally { setPhotoBusy(false); }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(loadPosts, 0);
@@ -321,6 +512,7 @@ function App() {
     setUser(session.user);
     localStorage.setItem('scroll_token', session.token);
     localStorage.setItem('scroll_user', JSON.stringify(session.user));
+    setAppStage('feed');
     setAuthOpen(false);
     showToast(`Welcome in, ${session.user?.username || 'friend'} ✨`);
     loadPosts();
@@ -328,7 +520,7 @@ function App() {
   function signOut() {
     localStorage.removeItem('scroll_token');
     localStorage.removeItem('scroll_user');
-    setToken(''); setUser(null); setActiveNav('for-you'); setTab('For you');
+    setToken(''); setUser(null); setActiveNav('for-you'); setTab('For you'); setProfileOpen(false); setProfileData(null); setAppStage('auth'); setAuthMode('login');
     showToast('You’ve signed out. See you soon!');
   }
   function selectNav(item) {
@@ -411,41 +603,44 @@ function App() {
       setSearchResults({ ...(result.results || { users: [], posts: [] }), query: search.trim() });
     } catch { setSearchResults({ users: [], posts: [], preview: true, query: search.trim() }); }
     finally { setSearching(false); }
+    setSearchOpen(false);
   }
 
   const currentTitle = activeNav === 'saved' ? 'Saved Shorts' : activeNav === 'following' ? 'Following' : activeNav === 'explore' ? 'Explore Shorts' : 'For You';
 
-  return <div className="scroll-app">
+  if (appStage === 'splash') return <SplashScreen />;
+  if (appStage === 'auth') return <AuthModal mode={authMode} setMode={setAuthMode} onSuccess={handleAuthSuccess} standalone />;
+
+  return <div className={`scroll-app ${profileOpen ? 'profile-active' : ''}`}>
     <aside className="left-rail">
-      <button className="brand" onClick={() => selectNav(navItems[0])} aria-label="Scroll home"><span className="brand-mark">s</span><span>scroll<span className="brand-period">.</span></span></button>
       <div className="left-label">YOUR SPACE</div>
       <nav className="main-nav" aria-label="Main navigation">{navItems.map((item) => <button key={item.id} className={`nav-item ${activeNav === item.id ? 'nav-active' : ''}`} onClick={() => selectNav(item)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === 'saved' && savedIds.size > 0 && <span className="nav-count">{savedIds.size}</span>}</button>)}<button className={`nav-item ${activeNav === 'notifications' ? 'nav-active' : ''}`} onClick={() => { setActiveNav('notifications'); showToast(token ? 'You’re all caught up.' : 'Sign in to keep up with your people.'); if (!token && apiOnline) openAuth(); }}><Icon name="bell" /><span>Notifications</span><span className="notification-dot" /></button></nav>
       <button className="create-button" onClick={() => { if (apiOnline && !token) openAuth('signup'); else setComposerOpen(true); }}><Icon name="plus" size={19} /><span>Share a moment</span></button>
       <section className="rail-prompt"><span className="prompt-icon"><Icon name="spark" size={18} /></span><strong>A little reminder</strong><p>Make room for the things that make you feel like you.</p><span className="prompt-decoration">✳</span></section>
-      <div className="left-bottom">{user ? <button className="profile-row" onClick={signOut}><div className="avatar avatar-1">{initials(user.username)}</div><span className="profile-meta"><strong>{user.username}</strong><small>See you around</small></span><Icon name="logOut" size={17} /></button> : <button className="profile-row" onClick={() => openAuth('login')}><div className="avatar avatar-3"><Icon name="users" size={17} /></div><span className="profile-meta"><strong>Make yourself at home</strong><small>Sign in to join in</small></span><Icon name="arrow" size={17} /></button>}<span className="left-copyright">A softer corner of the internet. © 2026</span></div>
+      <div className="left-bottom"><button className="profile-row" onClick={openProfile}><UserAvatar user={user} /><span className="profile-meta"><strong>{user?.username}</strong><small>View your profile</small></span><Icon name="arrow" size={17} /></button><span className="left-copyright">A softer corner of the internet. © 2026</span></div>
     </aside>
 
-    <header className="mobile-header"><button className="brand" onClick={() => selectNav(navItems[0])}><span className="brand-mark">s</span><span>scroll<span className="brand-period">.</span></span></button><button className="mobile-avatar" onClick={() => user ? signOut() : openAuth()} aria-label={user ? 'Sign out' : 'Sign in'}>{user ? initials(user.username) : <Icon name="users" size={19} />}</button></header>
-
     <main className="main-column">
-      <div className="topbar"><div className="breadcrumb"><span>Home</span><span>/</span><strong>{navItems.find((item) => item.id === activeNav)?.label || 'Notifications'}</strong></div><form className="search-box" onSubmit={submitSearch}><Icon name="search" size={17} /><input className="search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a little inspiration" aria-label="Search Scroll" /><span className="search-shortcut">↵</span></form>{user ? <button className="topbar-user" onClick={signOut} title="Sign out"><div className="avatar avatar-1">{initials(user.username)}</div></button> : <button className="button button-light topbar-join" onClick={() => openAuth('login')}>Sign in</button>}</div>
+      <div className="topbar"><div className="breadcrumb"><span>Home</span><span>/</span><strong>{navItems.find((item) => item.id === activeNav)?.label || 'Notifications'}</strong></div><div className="topbar-actions"><button className="search-toggle" onClick={() => setSearchOpen(true)} aria-label="Search Scroll"><Icon name="search" size={24} /></button><button className="topbar-user" onClick={openProfile} title="Open your profile" aria-label="Open your profile"><UserAvatar user={user} /></button></div></div>
 
       <section className="feed-heading"><div><span className="eyebrow"><span className="sun-dot" /> SHORT VIDEOS · GOOD STORIES</span><h1>{currentTitle}<span className="heading-period">.</span></h1><p>Swipe through something new. Stay for what moves you.</p></div><button className="new-post-button" aria-label="Create a Short" onClick={() => { if (apiOnline && !token) openAuth('signup'); else setComposerOpen(true); }}><Icon name="plus" size={17} /> <span>Create</span></button></section>
 
-      <div className="feed-toolbar"><div className="feed-tabs"><button className={tab === 'For you' ? 'feed-tab-active' : ''} onClick={() => { setTab('For you'); setActiveNav('for-you'); }}><Icon name="spark" size={15} /> For you</button><button className={tab === 'Following' ? 'feed-tab-active' : ''} onClick={() => { setTab('Following'); setActiveNav('following'); }}><Icon name="users" size={16} /> Following</button></div><span className={`connection-label ${apiOnline ? 'connected' : ''}`}><i />{apiOnline ? 'Community feed' : 'Preview mode'}</span></div>
+      <div className="feed-toolbar"><div className="feed-tabs"><button className={tab === 'For you' ? 'feed-tab-active' : ''} onClick={() => { setTab('For you'); setActiveNav('for-you'); }}><Icon name="spark" size={15} /> For You</button><button className={tab === 'Following' ? 'feed-tab-active' : ''} onClick={() => { setTab('Following'); setActiveNav('following'); }}><Icon name="users" size={16} /> Following</button></div><span className={`connection-label ${apiOnline ? 'connected' : ''}`}><i />{apiOnline ? 'Community feed' : 'Preview mode'}</span></div>
 
       {search && <div className="search-results-panel"><div className="search-result-head"><div><span className="eyebrow">LOOKING FOR</span><h2>“{search}”</h2></div><button className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); }} aria-label="Clear search"><Icon name="close" /></button></div>{searching && <p className="search-placeholder">Finding a few good things…</p>}{searchResults && !searching && (searchResults.posts?.length || searchResults.users?.length ? <><div className="search-result-tags">{searchResults.users?.length ? <span>{searchResults.users.length} people</span> : null}{searchResults.posts?.length ? <span>{searchResults.posts.length} posts</span> : null}</div>{searchResults.users?.map((person) => <div className="search-person" key={person._id}><div className="avatar avatar-2">{initials(person.username)}</div><strong>{person.username}</strong><span>on Scroll</span></div>)}</> : <div className="search-placeholder"><span>☁</span><strong>No matches just yet.</strong><p>{searchResults.preview ? 'Connect the Scroll API to search the wider community.' : 'Try another word or explore the feed below.'}</p></div>)}</div>}
 
       {!search && <>
-        {activeNav === 'notifications' ? <section className="empty-state"><span className="empty-illustration"><Icon name="bell" size={31} /></span><span className="eyebrow">A quiet moment</span><h2>You’re all caught up.</h2><p>When someone likes or comments on something you share, you’ll find it right here.</p><button className="button button-light" onClick={() => selectNav(navItems[0])}>Back to your feed</button></section> : loading ? <div className="loading-state"><span className="loader" /><p>Gathering the good stuff…</p></div> : visiblePosts.length ? <div className="post-list">{visiblePosts.map((post) => <PostCard key={post._id} post={post} user={user} liked={likedIds.has(post._id)} saved={savedIds.has(post._id)} following={followingIds.has(post.author?._id || post.author?.username)} onLike={toggleLike} onSave={toggleSave} onComment={(item) => setCommentPost(item)} onShare={sharePost} onFollow={toggleFollow} />)}</div> : <div className="empty-state"><span className="empty-illustration"><Icon name={activeNav === 'saved' ? 'bookmark' : 'spark'} size={31} /></span><span className="eyebrow">A fresh start</span><h2>{activeNav === 'saved' ? 'Nothing tucked away yet.' : activeNav === 'following' ? 'Your circle is waiting.' : 'It’s a little quiet here.'}</h2><p>{activeNav === 'saved' ? 'Save a post that speaks to you and it will be right here.' : activeNav === 'following' ? 'Find a creator whose corner of the world you love and follow along.' : 'There is always a first story. Share yours or come back in a little while.'}</p><button className="button button-primary" onClick={() => activeNav === 'following' ? setActiveNav('explore') : setComposerOpen(true)}>{activeNav === 'following' ? 'Explore the community' : 'Share a little something'} <Icon name="arrow" size={16} /></button></div>}
+        {activeNav === 'notifications' ? <section className="empty-state"><span className="empty-illustration"><Icon name="bell" size={31} /></span><span className="eyebrow">A quiet moment</span><h2>You’re all caught up.</h2><p>When someone likes or comments on something you share, you’ll find it right here.</p><button className="button button-light" onClick={() => selectNav(navItems[0])}>Back to your feed</button></section> : loading ? <div className="loading-state"><span className="loader" /><p>Gathering the good stuff…</p></div> : visiblePosts.length ? <div className="post-list">{visiblePosts.map((post) => <PostCard key={post._id} post={post} user={user} liked={likedIds.has(post._id)} saved={savedIds.has(post._id)} following={followingIds.has(post.author?._id || post.author?.username)} onLike={toggleLike} onSave={toggleSave} onComment={(item) => setCommentPost(item)} onShare={sharePost} onFollow={toggleFollow} onView={recordView} />)}</div> : <div className="empty-state"><span className="empty-illustration"><Icon name={activeNav === 'saved' ? 'bookmark' : 'spark'} size={31} /></span><span className="eyebrow">A fresh start</span><h2>{activeNav === 'saved' ? 'Nothing tucked away yet.' : activeNav === 'following' ? 'Your circle is waiting.' : 'It’s a little quiet here.'}</h2><p>{activeNav === 'saved' ? 'Save a post that speaks to you and it will be right here.' : activeNav === 'following' ? 'Find a creator whose corner of the world you love and follow along.' : 'There is always a first story. Share yours or come back in a little while.'}</p><button className="button button-primary" onClick={() => activeNav === 'following' ? setActiveNav('explore') : setComposerOpen(true)}>{activeNav === 'following' ? 'Explore the community' : 'Share a little something'} <Icon name="arrow" size={16} /></button></div>}
         {!loading && activeNav !== 'notifications' && visiblePosts.length > 0 && <div className="feed-end"><span>✳</span><p>You’re all caught up for now.</p><small>Take a breath. The good stuff will still be here.</small></div>}
       </>}
-      <div className="mobile-nav">{[...navItems.slice(0, 3), { id: 'create', label: 'Create', icon: 'plus' }, { id: 'saved', label: 'Saved', icon: 'bookmark' }].map((item) => item.id === 'create' ? <button key="create" onClick={() => setComposerOpen(true)}><Icon name="plus" size={20} /><small>Create</small></button> : <button key={item.id} className={activeNav === item.id ? 'mobile-active' : ''} onClick={() => selectNav(item)}><Icon name={item.icon} size={19} /><small>{item.label}</small></button>)}</div>
+      <div className="mobile-nav">{[...navItems.slice(0, 3), { id: 'create', label: 'Create', icon: 'plus' }, { id: 'profile', label: 'Profile', icon: 'user' }].map((item) => item.id === 'create' ? <button key="create" onClick={() => setComposerOpen(true)}><Icon name="plus" size={20} /><small>Create</small></button> : item.id === 'profile' ? <button key="profile" onClick={openProfile}><Icon name="user" size={19} /><small>Profile</small></button> : <button key={item.id} className={activeNav === item.id ? 'mobile-active' : ''} onClick={() => selectNav(item)}><Icon name={item.icon} size={19} /><small>{item.label}</small></button>)}</div>
     </main>
 
     <RightRail onCreate={() => setComposerOpen(true)} onAuth={() => openAuth('signup')} signedIn={Boolean(user)} apiOnline={apiOnline} user={user} />
 
+    {profileOpen && <ProfilePage user={user} profile={profileData} loading={profileLoading} photoBusy={photoBusy} onClose={() => setProfileOpen(false)} onUploadPhoto={changeProfilePicture} onSaveProfile={saveProfile} onSignOut={signOut} />}
     {authOpen && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthOpen(false)} onSuccess={handleAuthSuccess} />}
+    {searchOpen && <div className="search-scrim" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}><form className="search-dialog" onSubmit={submitSearch}><div className="search-dialog-field"><Icon name="search" size={22} /><input className="search-input" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people and posts" aria-label="Search Scroll" /><button type="button" className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); setSearchOpen(false); }} aria-label="Close search"><Icon name="close" /></button></div><p>Look for a creator or a moment you want to find again.</p>{searching && <span className="search-dialog-hint">Searching…</span>}<button className="button button-primary search-submit" disabled={!search.trim() || searching}>Search <Icon name="arrow" size={16} /></button></form></div>}
     {commentPost && <CommentSheet post={commentPost} token={token} onClose={() => setCommentPost(null)} showToast={showToast} />}
     {composerOpen && <div className="modal-scrim" onMouseDown={(event) => event.target === event.currentTarget && setComposerOpen(false)}><section className="composer-card" role="dialog" aria-modal="true" aria-labelledby="compose-heading"><header><div><span className="eyebrow">A little something from you</span><h2 id="compose-heading">Share a moment</h2></div><button className="icon-button" aria-label="Close composer" onClick={() => setComposerOpen(false)}><Icon name="close" /></button></header><form onSubmit={submitPost}><textarea value={composeText} onChange={(event) => setComposeText(event.target.value)} maxLength={5000} placeholder="What’s making your day a little brighter?" aria-label="Post text" autoFocus /><div className="composer-bottom"><label className="attach-button"><Icon name="image" size={18} /><span>Add photos or video</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onChange={(event) => setComposeFiles([...event.target.files].slice(0, 5))} /></label><small>{composeText.length}/5000</small></div>{composeFiles.length > 0 && <div className="file-pills">{composeFiles.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}</div>}<button className="button button-primary compose-submit" disabled={posting || (!composeText.trim() && composeFiles.length === 0)}>{posting ? 'Sharing…' : 'Share with everyone'} <Icon name="arrow" size={16} /></button><p className="compose-note">{apiOnline && token ? 'Your post will be shared with the community.' : 'This preview saves your post to this session only.'}</p></form></section></div>}
     {toast && <div className="toast" role="status"><Icon name="spark" size={16} />{toast}</div>}
@@ -453,3 +648,4 @@ function App() {
 }
 
 export default App;
+

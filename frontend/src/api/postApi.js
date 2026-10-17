@@ -40,7 +40,11 @@ export async function apiRequest(path, { method = 'GET', token = '', body, signa
   if (text) {
     try { data = JSON.parse(text); } catch { data = { message: 'The server returned an unexpected response.' }; }
   }
-  if (!response.ok) throw new Error(data.message || `Request failed (${response.status}).`);
+  if (!response.ok) {
+    const error = new Error(data.message || `Request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -49,6 +53,14 @@ export const getFeed = (token) => apiRequest('/posts/feed?limit=20', { token });
 export const getComments = (postId, token) => apiRequest(`/posts/${postId}/comments?limit=50`, { token });
 export const loginUser = (email, password) => apiRequest('/auth/login', { method: 'POST', body: { email, password } });
 export const registerUser = (username, email, password, age) => apiRequest('/auth/register', { method: 'POST', body: { username, email, password, age: Number(age) } });
+export const updateMyProfile = (changes, token) => apiRequest('/profile/me', { method: 'PATCH', token, body: changes });
+export const recordPostView = (postId) => apiRequest(`/posts/${postId}/view`, { method: 'POST' });
+
+export async function uploadProfilePicture(file, token) {
+  const formData = new FormData();
+  formData.append('profilePicture', file);
+  return apiRequest('/profile/me/photo', { method: 'PATCH', token, body: formData });
+}
 
 export async function createPost(content, files, token) {
   const formData = new FormData();
@@ -56,3 +68,4 @@ export async function createPost(content, files, token) {
   files.forEach((file) => formData.append('media', file));
   return apiRequest('/posts', { method: 'POST', token, body: formData });
 }
+

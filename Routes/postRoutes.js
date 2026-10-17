@@ -8,6 +8,7 @@ const {
     createPost,
     getPosts,
     getPostById,
+    recordPostView,
     updatePost,
     deletePost,
     getFeed
@@ -19,6 +20,7 @@ const router = express.Router();
 router.get('/', getPosts);
 router.get('/feed', protect, getFeed);
 router.get('/:id', getPostById);
+router.post('/:id/view', recordPostView);
 
 // Protected routes
 router.post(
@@ -32,3 +34,4 @@ router.patch('/:id', protect, updatePost);
 router.delete('/:id', protect, deletePost);
 
 module.exports = router;
+

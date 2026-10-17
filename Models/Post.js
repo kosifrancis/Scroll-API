@@ -26,7 +26,13 @@ const postSchema = new mongoose.Schema({
             enum: ['image', 'video'],
             required: true
         }
-    }]
+    }],
+
+    viewsCount: {
+        type: Number,
+        default: 0,
+        min: 0
+    }
 }, {
     timestamps: true
 });
@@ -34,3 +40,4 @@ const postSchema = new mongoose.Schema({
 module.exports =
     mongoose.models.Post ||
     mongoose.model('Post', postSchema);
+
