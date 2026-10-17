@@ -72,6 +72,8 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
     volume: <><path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></>,
     mute: <><path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="m16 9 5 6m0-6-5 6" /></>,
     music: <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>,
+    download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7-.2.1a8 8 0 0 1-1.5.9l-.2.1-.3 1.8h-2.8l-.3-1.8-.2-.1a8 8 0 0 1-1.5-.9l-.2-.1-1.7.7-1.4-2.4 1.4-1.1.1-.2a7 7 0 0 1 0-1.8l-.1-.2-1.4-1.1 1.4-2.4 1.7.7.2-.1a8 8 0 0 1 1.5-.9l.2-.1.3-1.8h2.8l.3 1.8.2.1a8 8 0 0 1 1.5.9l.2.1 1.7-.7 1.4 2.4-1.4 1.1-.1.2a7 7 0 0 1 0 1.8Z" /></>,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">{paths[name] || paths.spark}</svg>;
 }
@@ -100,8 +102,9 @@ function formatCount(value = 0) {
   return new Intl.NumberFormat('en', { notation: Number(value) >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(Number(value) || 0);
 }
 
-function ProfilePage({ user, profile, loading, photoBusy, onClose, onUploadPhoto, onSaveProfile, onSignOut }) {
+function ProfilePage({ user, profile, loading, photoBusy, videoMutedByDefault, onClose, onUploadPhoto, onSaveProfile, onSignOut, onVideoMutedChange }) {
   const [editing, setEditing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({ username: user?.username || '', age: user?.age || '' });
   const profileUser = profile || user || {};
@@ -127,8 +130,16 @@ function ProfilePage({ user, profile, loading, photoBusy, onClose, onUploadPhoto
       <header className="profile-page-topbar">
         <button className="profile-back" onClick={onClose}><Icon name="arrow" size={19} /> Back to feed</button>
         <h1>Your profile</h1>
-        <button className="profile-logout" onClick={onSignOut}><Icon name="logOut" size={18} /> Sign out</button>
+        <div className="profile-topbar-actions">
+          <button className={`profile-settings-toggle ${settingsOpen ? 'is-active' : ''}`} onClick={() => setSettingsOpen((value) => !value)} aria-label={settingsOpen ? 'Close settings' : 'Open settings'} aria-expanded={settingsOpen} title="Settings"><Icon name={settingsOpen ? 'close' : 'settings'} size={19} /></button>
+          <button className="profile-logout" onClick={onSignOut}><Icon name="logOut" size={18} /><span>Sign out</span></button>
+        </div>
       </header>
+
+      {settingsOpen && <section className="profile-settings" aria-label="Settings">
+        <div className="profile-settings-heading"><div><span className="eyebrow">PREFERENCES</span><h2>Settings</h2></div><p>Make Scroll feel right for you.</p></div>
+        <div className="setting-row"><span><strong>Mute videos by default</strong><small>Choose whether new videos start quietly. You can change sound on any video.</small></span><button className={`setting-switch ${videoMutedByDefault ? 'is-on' : ''}`} type="button" role="switch" aria-checked={videoMutedByDefault} onClick={() => onVideoMutedChange(!videoMutedByDefault)}><span /></button></div>
+      </section>}
 
       <section className="profile-hero">
         <label className={`profile-photo-control ${photoBusy ? 'is-busy' : ''}`}>
@@ -221,11 +232,14 @@ function AuthModal({ mode, setMode, onClose, onSuccess, standalone = false }) {
   );
 }
 
-function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare, onFollow, onView, following }) {
+function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare, onFollow, onView, onDownload, following, videoMutedByDefault }) {
   const videoRef = useRef(null);
   const cardRef = useRef(null);
-  const [muted, setMuted] = useState(true);
+  const [mutedOverride, setMutedOverride] = useState(null);
   const [playing, setPlaying] = useState(true);
+  const [likePulse, setLikePulse] = useState(false);
+  const [likeBurst, setLikeBurst] = useState(null);
+  const likeBurstId = useRef(0);
   const author = post.author?.username || post.author?.name || 'scroll creator';
   const media = post.media?.[0];
   const mediaUrl = assetUrl(media?.url || post.image);
@@ -234,6 +248,7 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
   const isVideo = media?.type === 'video';
   const postId = post._id;
   const isDemo = post.demo;
+  const muted = mutedOverride ?? videoMutedByDefault;
 
   useEffect(() => {
     const card = cardRef.current;
@@ -259,14 +274,36 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
     else { video.pause(); setPlaying(false); }
   }
 
+  function showLikeBurst(event) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    likeBurstId.current += 1;
+    setLikeBurst({
+      id: likeBurstId.current,
+      x: ((event.clientX - bounds.left) / bounds.width) * 100,
+      y: ((event.clientY - bounds.top) / bounds.height) * 100,
+    });
+  }
+
+  function handleDoubleTap(event) {
+    if (event.target.closest('button, a, input, label')) return;
+    showLikeBurst(event);
+    if (!liked) onLike(post);
+  }
+
+  function handleLike() {
+    setLikePulse((pulse) => !pulse);
+    onLike(post);
+  }
+
   return (
     <article ref={cardRef} className="post-card" id={post._id}>
-      <div className="post-media-wrap" onDoubleClick={(event) => { if (!event.target.closest('button') && !liked) onLike(post); }}>
+      <div className="post-media-wrap" onDoubleClick={handleDoubleTap}>
         {mediaUrl ? (isVideo
           ? <video ref={videoRef} className="post-media" src={mediaUrl} muted={muted} loop autoPlay playsInline preload="metadata" onClick={togglePlayback} aria-label={`Short video by ${author}`} />
           : <img className="post-media" src={mediaUrl} alt={`A post shared by ${author}`} loading="lazy" />)
           : <div className={`post-art post-art-${(String(post._id).length % 3) + 1}`}><span className="art-kicker">A thought worth keeping</span><p>{post.content}</p><span className="art-spark">✳</span></div>}
         <div className="post-shade" />
+        {likeBurst && <span key={likeBurst.id} className="like-burst" aria-hidden="true" style={{ left: `${likeBurst.x}%`, top: `${likeBurst.y}%` }}><Icon name="heart" size={90} /><i>♥</i></span>}
         <header className="post-head">
           <div className={`avatar avatar-${(author.length % 4) + 1}`}>{initials(author)}</div>
           <div className="post-author"><strong>@{author}</strong><span>{formatTime(post.createdAt)} ago · <span className="globe">Public</span></span></div>
@@ -276,11 +313,11 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
         {isVideo && <button className={`video-playback ${playing ? 'is-playing' : ''}`} onClick={togglePlayback} aria-label={playing ? 'Pause video' : 'Play video'}><Icon name="play" size={27} /></button>}
         <div className="post-caption"><p>{post.content || 'A moment worth sharing.'}</p><span className="post-sound"><Icon name={isVideo ? 'music' : 'image'} size={14} /> {isVideo ? 'Original sound' : 'Photo'} · {author}</span></div>
         <div className="post-actions" aria-label="Short video actions">
-          <button className={`short-action ${liked ? 'action-liked' : ''}`} onClick={() => onLike(post)} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><Icon name="heart" size={25} /><span>{likes ? likes > 999 ? `${(likes / 1000).toFixed(1)}K` : likes : 'Like'}</span></button>
+          <button className={`short-action ${liked ? 'action-liked' : ''} ${likePulse ? 'like-pulse' : ''}`} onClick={handleLike} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><Icon name="heart" size={25} /><span>{likes ? likes > 999 ? `${(likes / 1000).toFixed(1)}K` : likes : 'Like'}</span></button>
           <button className="short-action" onClick={() => onComment(post)} aria-label="View comments"><Icon name="comment" size={24} /><span>{comments > 999 ? `${(comments / 1000).toFixed(1)}K` : comments || 'Comment'}</span></button>
           <button className="short-action" onClick={() => onShare(post)} aria-label="Share post"><Icon name="share" size={24} /><span>Share</span></button>
           <button className={`short-action ${saved ? 'action-saved' : ''}`} onClick={() => onSave(post)} aria-label={saved ? 'Remove from saved' : 'Save post'} aria-pressed={saved}><Icon name="bookmark" size={23} /><span>{saved ? 'Saved' : 'Save'}</span></button>
-          {isVideo && <button className="short-action sound-action" onClick={() => { const nextMuted = !muted; setMuted(nextMuted); if (videoRef.current) videoRef.current.muted = nextMuted; }} aria-label={muted ? 'Unmute video' : 'Mute video'}><Icon name={muted ? 'mute' : 'volume'} size={21} /><span>Sound</span></button>}
+          {isVideo && <><button className="short-action sound-action" onClick={() => { const nextMuted = !muted; setMutedOverride(nextMuted); if (videoRef.current) videoRef.current.muted = nextMuted; }} aria-label={muted ? 'Unmute video' : 'Mute video'}><Icon name={muted ? 'mute' : 'volume'} size={21} /><span>{muted ? 'Sound off' : 'Sound on'}</span></button><button className="short-action download-action" onClick={() => onDownload(post)} aria-label="Download video"><Icon name="download" size={22} /><span>Download</span></button></>}
         </div>
       </div>
     </article>
@@ -360,6 +397,7 @@ function App() {
   const [profileData, setProfileData] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [videoMutedByDefault, setVideoMutedByDefault] = useState(() => localStorage.getItem('scroll_video_muted') !== 'false');
 
   const showToast = useCallback((message) => {
     setToast(message);
@@ -478,6 +516,11 @@ function App() {
     finally { setPhotoBusy(false); }
   }
 
+  function changeVideoMutedDefault(muted) {
+    setVideoMutedByDefault(muted);
+    localStorage.setItem('scroll_video_muted', String(muted));
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(loadPosts, 0);
     return () => window.clearTimeout(timer);
@@ -594,6 +637,30 @@ function App() {
       else showToast('Share this post with someone you like.');
     } catch (error) { if (error.name !== 'AbortError') showToast('This post is ready to share.'); }
   }
+  async function downloadVideo(post) {
+    const video = post.media?.find((item) => item.type === 'video');
+    const url = assetUrl(video?.url || post.image);
+    if (!url) { showToast('There is no video to download.'); return; }
+    const username = (post.author?.username || 'scroll-video').replace(/[^a-z0-9_-]/gi, '-').slice(0, 32);
+    const originalName = new URL(url, window.location.href).pathname.split('/').pop() || '';
+    const extension = originalName.match(/\.[a-z0-9]{2,5}$/i)?.[0] || '.mp4';
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('The video could not be downloaded.');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `${username}-scroll-${post._id}${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      showToast('Your video download has started.');
+    } catch {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      showToast('Opening the video so you can save it.');
+    }
+  }
   async function submitSearch(event) {
     event.preventDefault();
     if (!search.trim()) return;
@@ -621,7 +688,7 @@ function App() {
     </aside>
 
     <main className="main-column">
-      <div className="topbar"><div className="breadcrumb"><span>Home</span><span>/</span><strong>{navItems.find((item) => item.id === activeNav)?.label || 'Notifications'}</strong></div><div className="topbar-actions"><button className="search-toggle" onClick={() => setSearchOpen(true)} aria-label="Search Scroll"><Icon name="search" size={24} /></button><button className="topbar-user" onClick={openProfile} title="Open your profile" aria-label="Open your profile"><UserAvatar user={user} /></button></div></div>
+      <div className="topbar"><div className="breadcrumb"><span>Home</span><span>/</span><strong>{navItems.find((item) => item.id === activeNav)?.label || 'Notifications'}</strong></div><div className="topbar-actions"><button className="search-toggle" onClick={() => setSearchOpen(true)} aria-label="Search Scroll"><Icon name="search" size={24} /></button></div></div>
 
       <section className="feed-heading"><div><span className="eyebrow"><span className="sun-dot" /> SHORT VIDEOS · GOOD STORIES</span><h1>{currentTitle}<span className="heading-period">.</span></h1><p>Swipe through something new. Stay for what moves you.</p></div><button className="new-post-button" aria-label="Create a Short" onClick={() => { if (apiOnline && !token) openAuth('signup'); else setComposerOpen(true); }}><Icon name="plus" size={17} /> <span>Create</span></button></section>
 
@@ -630,7 +697,7 @@ function App() {
       {search && <div className="search-results-panel"><div className="search-result-head"><div><span className="eyebrow">LOOKING FOR</span><h2>“{search}”</h2></div><button className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); }} aria-label="Clear search"><Icon name="close" /></button></div>{searching && <p className="search-placeholder">Finding a few good things…</p>}{searchResults && !searching && (searchResults.posts?.length || searchResults.users?.length ? <><div className="search-result-tags">{searchResults.users?.length ? <span>{searchResults.users.length} people</span> : null}{searchResults.posts?.length ? <span>{searchResults.posts.length} posts</span> : null}</div>{searchResults.users?.map((person) => <div className="search-person" key={person._id}><div className="avatar avatar-2">{initials(person.username)}</div><strong>{person.username}</strong><span>on Scroll</span></div>)}</> : <div className="search-placeholder"><span>☁</span><strong>No matches just yet.</strong><p>{searchResults.preview ? 'Connect the Scroll API to search the wider community.' : 'Try another word or explore the feed below.'}</p></div>)}</div>}
 
       {!search && <>
-        {activeNav === 'notifications' ? <section className="empty-state"><span className="empty-illustration"><Icon name="bell" size={31} /></span><span className="eyebrow">A quiet moment</span><h2>You’re all caught up.</h2><p>When someone likes or comments on something you share, you’ll find it right here.</p><button className="button button-light" onClick={() => selectNav(navItems[0])}>Back to your feed</button></section> : loading ? <div className="loading-state"><span className="loader" /><p>Gathering the good stuff…</p></div> : visiblePosts.length ? <div className="post-list">{visiblePosts.map((post) => <PostCard key={post._id} post={post} user={user} liked={likedIds.has(post._id)} saved={savedIds.has(post._id)} following={followingIds.has(post.author?._id || post.author?.username)} onLike={toggleLike} onSave={toggleSave} onComment={(item) => setCommentPost(item)} onShare={sharePost} onFollow={toggleFollow} onView={recordView} />)}</div> : <div className="empty-state"><span className="empty-illustration"><Icon name={activeNav === 'saved' ? 'bookmark' : 'spark'} size={31} /></span><span className="eyebrow">A fresh start</span><h2>{activeNav === 'saved' ? 'Nothing tucked away yet.' : activeNav === 'following' ? 'Your circle is waiting.' : 'It’s a little quiet here.'}</h2><p>{activeNav === 'saved' ? 'Save a post that speaks to you and it will be right here.' : activeNav === 'following' ? 'Find a creator whose corner of the world you love and follow along.' : 'There is always a first story. Share yours or come back in a little while.'}</p><button className="button button-primary" onClick={() => activeNav === 'following' ? setActiveNav('explore') : setComposerOpen(true)}>{activeNav === 'following' ? 'Explore the community' : 'Share a little something'} <Icon name="arrow" size={16} /></button></div>}
+        {activeNav === 'notifications' ? <section className="empty-state"><span className="empty-illustration"><Icon name="bell" size={31} /></span><span className="eyebrow">A quiet moment</span><h2>You’re all caught up.</h2><p>When someone likes or comments on something you share, you’ll find it right here.</p><button className="button button-light" onClick={() => selectNav(navItems[0])}>Back to your feed</button></section> : loading ? <div className="loading-state"><span className="loader" /><p>Gathering the good stuff…</p></div> : visiblePosts.length ? <div className="post-list">{visiblePosts.map((post) => <PostCard key={post._id} post={post} user={user} liked={likedIds.has(post._id)} saved={savedIds.has(post._id)} following={followingIds.has(post.author?._id || post.author?.username)} onLike={toggleLike} onSave={toggleSave} onComment={(item) => setCommentPost(item)} onShare={sharePost} onFollow={toggleFollow} onView={recordView} onDownload={downloadVideo} videoMutedByDefault={videoMutedByDefault} />)}</div> : <div className="empty-state"><span className="empty-illustration"><Icon name={activeNav === 'saved' ? 'bookmark' : 'spark'} size={31} /></span><span className="eyebrow">A fresh start</span><h2>{activeNav === 'saved' ? 'Nothing tucked away yet.' : activeNav === 'following' ? 'Your circle is waiting.' : 'It’s a little quiet here.'}</h2><p>{activeNav === 'saved' ? 'Save a post that speaks to you and it will be right here.' : activeNav === 'following' ? 'Find a creator whose corner of the world you love and follow along.' : 'There is always a first story. Share yours or come back in a little while.'}</p><button className="button button-primary" onClick={() => activeNav === 'following' ? setActiveNav('explore') : setComposerOpen(true)}>{activeNav === 'following' ? 'Explore the community' : 'Share a little something'} <Icon name="arrow" size={16} /></button></div>}
         {!loading && activeNav !== 'notifications' && visiblePosts.length > 0 && <div className="feed-end"><span>✳</span><p>You’re all caught up for now.</p><small>Take a breath. The good stuff will still be here.</small></div>}
       </>}
       <div className="mobile-nav">{[...navItems.slice(0, 3), { id: 'create', label: 'Create', icon: 'plus' }, { id: 'profile', label: 'Profile', icon: 'user' }].map((item) => item.id === 'create' ? <button key="create" onClick={() => setComposerOpen(true)}><Icon name="plus" size={20} /><small>Create</small></button> : item.id === 'profile' ? <button key="profile" onClick={openProfile}><Icon name="user" size={19} /><small>Profile</small></button> : <button key={item.id} className={activeNav === item.id ? 'mobile-active' : ''} onClick={() => selectNav(item)}><Icon name={item.icon} size={19} /><small>{item.label}</small></button>)}</div>
@@ -638,7 +705,7 @@ function App() {
 
     <RightRail onCreate={() => setComposerOpen(true)} onAuth={() => openAuth('signup')} signedIn={Boolean(user)} apiOnline={apiOnline} user={user} />
 
-    {profileOpen && <ProfilePage user={user} profile={profileData} loading={profileLoading} photoBusy={photoBusy} onClose={() => setProfileOpen(false)} onUploadPhoto={changeProfilePicture} onSaveProfile={saveProfile} onSignOut={signOut} />}
+    {profileOpen && <ProfilePage user={user} profile={profileData} loading={profileLoading} photoBusy={photoBusy} videoMutedByDefault={videoMutedByDefault} onVideoMutedChange={changeVideoMutedDefault} onClose={() => setProfileOpen(false)} onUploadPhoto={changeProfilePicture} onSaveProfile={saveProfile} onSignOut={signOut} />}
     {authOpen && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthOpen(false)} onSuccess={handleAuthSuccess} />}
     {searchOpen && <div className="search-scrim" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}><form className="search-dialog" onSubmit={submitSearch}><div className="search-dialog-field"><Icon name="search" size={22} /><input className="search-input" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people and posts" aria-label="Search Scroll" /><button type="button" className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); setSearchOpen(false); }} aria-label="Close search"><Icon name="close" /></button></div><p>Look for a creator or a moment you want to find again.</p>{searching && <span className="search-dialog-hint">Searching…</span>}<button className="button button-primary search-submit" disabled={!search.trim() || searching}>Search <Icon name="arrow" size={16} /></button></form></div>}
     {commentPost && <CommentSheet post={commentPost} token={token} onClose={() => setCommentPost(null)} showToast={showToast} />}
