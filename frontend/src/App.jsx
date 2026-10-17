@@ -237,7 +237,7 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
   const cardRef = useRef(null);
   const [mutedOverride, setMutedOverride] = useState(null);
   const [playing, setPlaying] = useState(true);
-  const [likePulse, setLikePulse] = useState(false);
+  const [likePulseId, setLikePulseId] = useState(0);
   const [likeBurst, setLikeBurst] = useState(null);
   const likeBurstId = useRef(0);
   const author = post.author?.username || post.author?.name || 'scroll creator';
@@ -291,7 +291,7 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
   }
 
   function handleLike() {
-    setLikePulse((pulse) => !pulse);
+    setLikePulseId((pulseId) => pulseId + 1);
     onLike(post);
   }
 
@@ -313,7 +313,7 @@ function PostCard({ post, user, liked, saved, onLike, onSave, onComment, onShare
         {isVideo && <button className={`video-playback ${playing ? 'is-playing' : ''}`} onClick={togglePlayback} aria-label={playing ? 'Pause video' : 'Play video'}><Icon name="play" size={27} /></button>}
         <div className="post-caption"><p>{post.content || 'A moment worth sharing.'}</p><span className="post-sound"><Icon name={isVideo ? 'music' : 'image'} size={14} /> {isVideo ? 'Original sound' : 'Photo'} · {author}</span></div>
         <div className="post-actions" aria-label="Short video actions">
-          <button className={`short-action ${liked ? 'action-liked' : ''} ${likePulse ? 'like-pulse' : ''}`} onClick={handleLike} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><Icon name="heart" size={25} /><span>{likes ? likes > 999 ? `${(likes / 1000).toFixed(1)}K` : likes : 'Like'}</span></button>
+          <button className={`short-action ${liked ? 'action-liked' : ''}`} onClick={handleLike} aria-label={liked ? 'Unlike post' : 'Like post'} aria-pressed={liked}><span key={likePulseId} className={`like-action-icon ${likePulseId ? 'is-animated' : ''}`}><Icon name="heart" size={25} /></span><span>{likes ? likes > 999 ? `${(likes / 1000).toFixed(1)}K` : likes : 'Like'}</span></button>
           <button className="short-action" onClick={() => onComment(post)} aria-label="View comments"><Icon name="comment" size={24} /><span>{comments > 999 ? `${(comments / 1000).toFixed(1)}K` : comments || 'Comment'}</span></button>
           <button className="short-action" onClick={() => onShare(post)} aria-label="Share post"><Icon name="share" size={24} /><span>Share</span></button>
           <button className={`short-action ${saved ? 'action-saved' : ''}`} onClick={() => onSave(post)} aria-label={saved ? 'Remove from saved' : 'Save post'} aria-pressed={saved}><Icon name="bookmark" size={23} /><span>{saved ? 'Saved' : 'Save'}</span></button>
