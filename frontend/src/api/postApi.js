@@ -53,13 +53,13 @@ export const getFeed = (token) => apiRequest('/posts/feed?limit=20', { token });
 export const getComments = (postId, token) => apiRequest(`/posts/${postId}/comments?limit=50`, { token });
 export const loginUser = (email, password) => apiRequest('/auth/login', { method: 'POST', body: { email, password } });
 export const registerUser = (username, email, password, age) => apiRequest('/auth/register', { method: 'POST', body: { username, email, password, age: Number(age) } });
-export const updateMyProfile = (changes, token) => apiRequest('/profile/me', { method: 'PATCH', token, body: changes });
+export const updateMyProfile = (changes, token) => apiRequest('/profiles/me', { method: 'PATCH', token, body: changes });
 export const recordPostView = (postId) => apiRequest(`/posts/${postId}/view`, { method: 'POST' });
 
 export async function uploadProfilePicture(file, token) {
   const formData = new FormData();
   formData.append('profilePicture', file);
-  return apiRequest('/profile/me/photo', { method: 'PATCH', token, body: formData });
+  return apiRequest('/profiles/me/photo', { method: 'PATCH', token, body: formData });
 }
 
 export async function createPost(content, files, token) {

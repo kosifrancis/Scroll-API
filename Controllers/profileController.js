@@ -16,12 +16,19 @@ const getMyProfile = async (req, res) => {
             });
         }
 
-        const [allPosts, posts, followersCount, followingCount] = await Promise.all([
-            Post.find({ author: req.userId }).select('_id').lean(),
-            Post.find({ author: req.userId }).sort({ createdAt: -1 }).limit(60).lean(),
-            Follow.countDocuments({ following: req.userId }),
-            Follow.countDocuments({ follower: req.userId })
-        ]);
+        const [allPosts, posts, followersCount, followingRecords] = await Promise.all([
+    Post.find({ author: req.userId }).select('_id').lean(),
+    Post.find({ author: req.userId }).sort({ createdAt: -1 }).limit(60).lean(),
+    Follow.countDocuments({ following: req.userId }),
+    Follow.find({ follower: req.userId })
+        .select('following')
+        .populate('following', 'username profilePicture')
+        .sort({ createdAt: -1 })
+        .lean()
+]);
+const following = followingRecords
+    .map((record) => record.following)
+    .filter(Boolean);
         const postIds = allPosts.map((post) => post._id);
         const [totalLikes, viewTotals] = await Promise.all([
             postIds.length ? Like.countDocuments({ post: { $in: postIds } }) : 0,
@@ -35,7 +42,8 @@ const getMyProfile = async (req, res) => {
             posts,
             postsCount: allPosts.length,
             followersCount,
-            followingCount,
+            followingCount: following.length,
+            following,
             totalLikes,
             totalViews: viewTotals[0]?.total || 0
         };

@@ -112,6 +112,7 @@ function ProfilePage({ user, profile, loading, photoBusy, videoMutedByDefault, o
   const [draft, setDraft] = useState({ username: user?.username || '', age: user?.age || '' });
   const profileUser = profile || user || {};
   const posts = profileUser.posts || [];
+  const following = profileUser.following || [];
   const stats = [
     { label: 'Posts', value: profileUser.postsCount ?? posts.length },
     { label: 'Followers', value: profileUser.followersCount ?? 0 },
@@ -160,6 +161,20 @@ function ProfilePage({ user, profile, loading, photoBusy, videoMutedByDefault, o
 
       <section className="profile-stats" aria-label="Profile statistics">
         {stats.map((stat) => <div className="profile-stat" key={stat.label}><strong>{formatCount(stat.value)}</strong><span>{stat.label}</span></div>)}
+      </section>
+
+      <section className="profile-following" aria-label="People you follow">
+        <header>
+          <div><span className="eyebrow">YOUR CIRCLE</span><h2>Following</h2></div>
+          <span>{formatCount(profileUser.followingCount ?? following.length)} people</span>
+        </header>
+        {loading ? <div className="profile-following-empty">Loading your following list…</div> : following.length ? <div className="profile-following-list">
+          {following.map((creator) => <div className="profile-following-person" key={creator._id}>
+            <UserAvatar user={creator} className="profile-following-avatar" />
+            <span className="profile-following-name"><strong>{creator.username || "Scroll creator"}</strong><small>You’re following</small></span>
+            <span className="profile-following-badge"><Icon name="check" size={14} /> Following</span>
+          </div>)}
+        </div> : <div className="profile-following-empty">You are not following anyone yet. Follow a creator from your feed to find them here.</div>}
       </section>
 
       {editing && <form className="profile-edit-form" onSubmit={saveProfile}>
@@ -721,7 +736,7 @@ function App() {
         return;
       }
       try {
-        const result = await apiRequest('/profile/me', { token: storedToken });
+        const result = await apiRequest('/profiles/me', { token: storedToken });
         if (!active) return;
         const verifiedUser = result.user || storedUser;
         setToken(storedToken);
@@ -772,7 +787,7 @@ function App() {
     if (!token) return;
     setProfileLoading(true);
     try {
-      const result = await apiRequest('/profile/me', { token });
+      const result = await apiRequest('/profiles/me', { token });
       const nextProfile = result.profile || result.user;
       setProfileData(nextProfile || null);
       if (result.user) {

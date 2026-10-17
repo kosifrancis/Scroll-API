@@ -841,6 +841,20 @@ video.post-media { position: absolute; inset: 0; background: #09090c; }
 .profile-stat { display: grid; min-height: 91px; align-content: center; justify-items: center; gap: 5px; border: 1px solid #ffffff16; border-radius: 14px; background: linear-gradient(145deg,#181a21,#121318); }
 .profile-stat strong { color: #fff; font-family: var(--heading); font-size: 23px; font-weight: 800; letter-spacing: -.6px; }
 .profile-stat span { color: #a4a6b0; font-size: 12px; }
+.profile-following { margin: 0 0 32px; }
+.profile-following > header { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding-bottom: 14px; border-bottom: 1px solid #ffffff18; }
+.profile-following > header .eyebrow { color: #aeb8d2; }
+.profile-following > header h2 { margin: 5px 0 0; font-family: var(--heading); font-size: 22px; letter-spacing: -.6px; }
+.profile-following > header > span { color: #a4a6b0; font-size: 12px; }
+.profile-following-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 10px; padding-top: 15px; }
+.profile-following-person { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 11px 12px; border: 1px solid #ffffff15; border-radius: 12px; background: linear-gradient(145deg,#181a21,#121318); }
+.profile-following-avatar { width: 42px; height: 42px; font-size: 15px; }
+.profile-following-name { display: grid; min-width: 0; gap: 4px; }
+.profile-following-name strong { overflow: hidden; color: #f4f4f6; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-following-name small { color: #a4a6b0; font-size: 11px; }
+.profile-following-badge { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; margin-left: auto; color: #c9cad1; font-size: 11px; }
+.profile-following-badge svg { color: #8cceaa; }
+.profile-following-empty { display: grid; min-height: 90px; align-content: center; justify-items: center; padding: 16px; color: #a4a6b0; font-size: 13px; line-height: 1.6; text-align: center; }
 .profile-edit-form { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,190px) auto; align-items: end; gap: 13px; margin: 0 0 32px; padding: 18px; border: 1px solid #ffffff18; border-radius: 14px; background: #15161d; }
 .profile-edit-form label { display: grid; gap: 7px; color: #c9cad1; font-size: 12px; font-weight: 600; }
 .profile-edit-form input { width: 100%; height: 43px; padding: 0 12px; border: 1px solid #ffffff20; border-radius: 9px; outline: none; background: #0d0e13; color: white; font-size: 14px; }
