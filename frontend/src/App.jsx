@@ -189,6 +189,7 @@ function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, p
   const [cameraFacing, setCameraFacing] = useState('environment');
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraSwitching, setCameraSwitching] = useState(false);
+  const [modeSwitching, setModeSwitching] = useState(false);
   const [recording, setRecording] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const videoRef = useRef(null);
@@ -257,7 +258,7 @@ function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, p
 
   async function switchCamera() {
     const currentStream = streamRef.current;
-    if (!currentStream || cameraSwitching || recording) return;
+    if (!currentStream || cameraSwitching || modeSwitching || recording) return;
     const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
     let nextVideoStream;
     setCameraSwitching(true);
@@ -281,6 +282,52 @@ function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, p
     } finally {
       setCameraSwitching(false);
     }
+  }
+
+  async function switchCaptureMode(nextMode) {
+    const currentStream = streamRef.current;
+    if (!currentStream || nextMode === mode || modeSwitching || recording) return;
+    setCameraError('');
+    setModeSwitching(true);
+    let microphoneStream;
+    try {
+      let nextStream;
+      if (nextMode === 'video') {
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        if (streamRef.current !== currentStream) {
+          microphoneStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const audioTracks = microphoneStream.getAudioTracks();
+        if (!audioTracks.length) throw new Error('No microphone track was returned.');
+        nextStream = new MediaStream([...currentStream.getVideoTracks(), ...audioTracks]);
+        microphoneStream = null;
+      } else {
+        nextStream = new MediaStream(currentStream.getVideoTracks());
+      }
+      streamRef.current = nextStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = nextStream;
+        videoRef.current.play().catch(() => {});
+      }
+      setCameraStream(nextStream);
+      setMode(nextMode);
+      if (nextMode === 'photo') currentStream.getAudioTracks().forEach((track) => track.stop());
+    } catch (error) {
+      microphoneStream?.getTracks().forEach((track) => track.stop());
+      setCameraError(nextMode === 'video'
+        ? error.name === 'NotAllowedError'
+          ? 'Microphone permission is needed to record video. Your photo camera is still on.'
+          : 'We could not turn on the microphone. Your photo camera is still on.'
+        : 'We could not switch modes. Your current camera preview is still on.');
+    } finally {
+      setModeSwitching(false);
+    }
+  }
+
+  function selectCaptureMode(nextMode) {
+    if (cameraActive) return switchCaptureMode(nextMode);
+    return openCamera(nextMode);
   }
 
   function addFiles(event) {
@@ -393,7 +440,7 @@ function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, p
             {cameraActive ? <>
               <video ref={videoRef} autoPlay muted playsInline className="create-live-video" />
               <span className="camera-live-badge"><i /> Camera is on</span>
-              <button className="camera-switch" type="button" onClick={switchCamera} disabled={cameraSwitching || recording} aria-label={cameraFacing === 'environment' ? 'Switch to front camera' : 'Switch to back camera'} title={cameraFacing === 'environment' ? 'Switch to front camera' : 'Switch to back camera'}><Icon name="switchCamera" size={18} /></button>
+              <button className="camera-switch" type="button" onClick={switchCamera} disabled={cameraSwitching || modeSwitching || recording} aria-label={cameraFacing === 'environment' ? 'Switch to front camera' : 'Switch to back camera'} title={cameraFacing === 'environment' ? 'Switch to front camera' : 'Switch to back camera'}><Icon name="switchCamera" size={18} /></button>
               <button className="camera-close" type="button" onClick={stopCamera} aria-label="Close camera preview"><Icon name="close" size={18} /></button>
               <div className="camera-capture-controls">
                 {mode === 'photo' ? <button className="camera-shutter" type="button" onClick={capturePhoto} aria-label="Take photo"><span /></button> : <button className={`camera-record ${recording ? 'is-recording' : ''}`} type="button" onClick={recording ? finishRecording : startRecording} aria-label={recording ? 'Stop recording' : 'Start video recording'}><span /></button>}
@@ -411,9 +458,9 @@ function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, p
           </div>
 
           <div className="create-mode-switch" role="group" aria-label="Choose what to capture">
-            <button type="button" className={mode === 'photo' ? 'is-selected' : ''} aria-pressed={mode === 'photo'} disabled={cameraActive || cameraStarting} onClick={() => openCamera('photo')}><Icon name="camera" size={19} /><span><strong>Photo</strong><small>Take a photo</small></span></button>
-            <button type="button" className={mode === 'video' ? 'is-selected' : ''} aria-pressed={mode === 'video'} disabled={cameraActive || cameraStarting} onClick={() => openCamera('video')}><Icon name="video" size={19} /><span><strong>Video</strong><small>Camera + microphone</small></span></button>
-            <button className="create-gallery-button" type="button" disabled={cameraActive || cameraStarting} onClick={() => fileInputRef.current?.click()} aria-label={`Choose ${mode} from phone`} title={`Choose ${mode} from phone`}><Icon name="image" size={19} /><span>Gallery</span></button>
+            <button type="button" className={mode === 'photo' ? 'is-selected' : ''} aria-pressed={mode === 'photo'} disabled={cameraStarting || cameraSwitching || modeSwitching || recording} onClick={() => selectCaptureMode('photo')}><Icon name="camera" size={19} /><span><strong>Photo</strong><small>Take a photo</small></span></button>
+            <button type="button" className={mode === 'video' ? 'is-selected' : ''} aria-pressed={mode === 'video'} disabled={cameraStarting || cameraSwitching || modeSwitching || recording} onClick={() => selectCaptureMode('video')}><Icon name="video" size={19} /><span><strong>Video</strong><small>Camera + microphone</small></span></button>
+            <button className="create-gallery-button" type="button" disabled={cameraActive || cameraStarting || modeSwitching} onClick={() => fileInputRef.current?.click()} aria-label={`Choose ${mode} from phone`} title={`Choose ${mode} from phone`}><Icon name="image" size={19} /><span>Gallery</span></button>
             <input ref={fileInputRef} className="create-file-input" type="file" accept={mode === 'photo' ? 'image/*' : 'video/*'} multiple onChange={addFiles} />
           </div>
           {cameraError && <p className="create-camera-error" role="alert">{cameraError}</p>}
