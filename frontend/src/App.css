@@ -1043,7 +1043,8 @@ video.post-media { position: absolute; inset: 0; background: #09090c; }
   .create-back { width: 39px; height: 39px; border-radius: 11px; }
   .create-header .eyebrow { font-size: 7px; letter-spacing: .8px; }
   .create-header h1 { font-size: 16px; }
-  .create-share { display: none; }
+  .create-share { display: flex; min-width: 78px; min-height: 37px; gap: 5px; padding: 0 9px; font-size: 11px; }
+  .create-share svg { width: 14px; height: 14px; }
   .create-content { grid-template-columns: 1fr; gap: 14px; padding: 14px 0 calc(22px + env(safe-area-inset-bottom,0px)); }
   .create-media-panel { gap: 11px; }
   .create-preview-stage { width: min(100%,340px); max-height: 46dvh; border-radius: 17px; }
@@ -1063,6 +1064,6 @@ video.post-media { position: absolute; inset: 0; background: #09090c; }
   .create-edit-panel { gap: 9px; padding: 14px; border-radius: 14px; }
   .create-edit-panel textarea { min-height: 87px; resize: vertical; font-size: 14px; }
   .create-caption-footer { font-size: 9px; }
-  .create-share-mobile { display: flex; min-height: 47px; justify-content: space-between; margin-top: 7px; border-radius: 11px; font-size: 13px; }
+  .create-share-mobile { display: none; }
 }
 
