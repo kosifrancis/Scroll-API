@@ -64,6 +64,8 @@ function Icon({ name, size = 20, strokeWidth = 1.8 }) {
     close: <><path d="m18 6-12 12M6 6l12 12" /></>,
     play: <path d="m8 5 12 7-12 7V5Z" />,
     image: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></>,
+    camera: <><path d="M14 5l1.5 2H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4.5L10 5h4Z" /><circle cx="12" cy="13" r="3.5" /></>,
+    video: <><rect x="3" y="5" width="13" height="14" rx="2" /><path d="m16 10 5-3v10l-5-3z" /></>,
     send: <><path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13" /></>,
     check: <path d="m5 12 4 4L19 6" />,
     spark: <><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z" /><path d="m19 14 1.2 2.8L23 18l-2.8 1.2L19 22l-1.2-2.8L15 18l2.8-1.2L19 14Z" /></>,
@@ -175,6 +177,227 @@ function ProfilePage({ user, profile, loading, photoBusy, videoMutedByDefault, o
         })}</div> : <div className="profile-empty"><Icon name="spark" size={24} /><strong>Your first post will live here.</strong><span>Share a moment from your feed to start your profile.</span></div>}
       </section>
     </main>
+  </div>;
+}
+
+function CreatePage({ files, setFiles, caption, setCaption, onSubmit, onClose, posting, apiOnline, token, showToast }) {
+  const [mode, setMode] = useState('photo');
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const fileInputRef = useRef(null);
+  const previewItems = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
+  const selected = previewItems[activeIndex] || previewItems[0];
+
+  useEffect(() => () => previewItems.forEach((item) => URL.revokeObjectURL(item.url)), [previewItems]);
+  useEffect(() => {
+    if (cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraStream]);
+  useEffect(() => () => {
+    const recorder = recorderRef.current;
+    if (recorder?.state === 'recording') {
+      recorder.onstop = null;
+      recorder.stop();
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraStream(null);
+    setCameraActive(false);
+    setRecording(false);
+  }
+
+  async function openCamera() {
+    setCameraError('');
+    if (cameraActive) return;
+    if (files.length >= 5) {
+      showToast('You can add up to 5 items to one post.');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera access is unavailable in this browser. Choose a photo or video from your phone instead.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: mode === 'video' });
+      streamRef.current = stream;
+      setCameraStream(stream);
+      setCameraActive(true);
+    } catch (error) {
+      const message = error.name === 'NotAllowedError'
+        ? `${mode === 'video' ? 'Camera or microphone' : 'Camera'} permission was declined. Allow access in your browser settings, or choose a file from your phone.`
+        : error.name === 'NotFoundError'
+          ? 'No camera was found. Choose a photo or video from your phone instead.'
+          : 'We could not open your camera. Choose a photo or video from your phone instead.';
+      setCameraError(message);
+    }
+  }
+
+  function addFiles(event) {
+    const chosen = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!chosen.length) return;
+    const typePrefix = mode === 'photo' ? 'image/' : 'video/';
+    const maxBytes = 50 * 1024 * 1024;
+    if (chosen.some((file) => file.size > maxBytes)) showToast('Each photo or video must be smaller than 50 MB.');
+    const valid = chosen.filter((file) => file.type.startsWith(typePrefix) && file.size <= maxBytes);
+    if (!valid.length) {
+      showToast(mode === 'photo' ? 'Choose an image to add a photo.' : 'Choose a video to add a video.');
+      return;
+    }
+    const next = [...files, ...valid].slice(0, 5);
+    setFiles(next);
+    setActiveIndex(next.length - 1);
+    if (valid.length + files.length > 5) showToast('You can add up to 5 items to one post.');
+    setCameraError('');
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video?.videoHeight) {
+      setCameraError('The camera is still getting ready. Try again in a moment.');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('We could not capture that photo. Please try again.');
+        return;
+      }
+      const file = new File([blob], `scroll-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const next = [...files, file].slice(0, 5);
+      setFiles(next);
+      setActiveIndex(next.length - 1);
+      stopCamera();
+    }, 'image/jpeg', 0.92);
+  }
+
+  function finishRecording() {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+  }
+
+  function startRecording() {
+    if (!streamRef.current || !window.MediaRecorder) {
+      setCameraError('Video recording is unavailable in this browser. Choose a video from your phone instead.');
+      return;
+    }
+    try {
+      const supportedType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'].find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = supportedType ? new MediaRecorder(streamRef.current, { mimeType: supportedType }) : new MediaRecorder(streamRef.current);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        const mimeType = (recorder.mimeType || 'video/webm').split(';')[0].toLowerCase();
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        if (blob.size) {
+          if (blob.size > 50 * 1024 * 1024) {
+            setCameraError('This video is larger than 50 MB. Record a shorter clip and try again.');
+            stopCamera();
+            return;
+          }
+          const extension = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+          const file = new File([blob], `scroll-video-${Date.now()}.${extension}`, { type: blob.type });
+          const next = [...files, file].slice(0, 5);
+          setFiles(next);
+          setActiveIndex(next.length - 1);
+        }
+        stopCamera();
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setCameraError('We could not start video recording. Choose a video from your phone instead.');
+    }
+  }
+
+  function removeSelected() {
+    const next = files.filter((_, index) => index !== activeIndex);
+    setFiles(next);
+    setActiveIndex(Math.max(0, Math.min(activeIndex, next.length - 1)));
+  }
+
+  function closePage() {
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    stopCamera();
+    onClose();
+  }
+
+  return <div className="create-page" role="dialog" aria-modal="true" aria-labelledby="create-heading">
+    <form className="create-form" onSubmit={onSubmit}>
+      <header className="create-header">
+        <button className="create-back" type="button" onClick={closePage} aria-label="Back to feed"><Icon name="close" size={22} /></button>
+        <div><span className="eyebrow">A LITTLE SOMETHING FROM YOU</span><h1 id="create-heading">Create a post</h1></div>
+        <button className="button button-primary create-share" disabled={posting || (!caption.trim() && files.length === 0)}>{posting ? 'Sharing…' : 'Share'} <Icon name="arrow" size={16} /></button>
+      </header>
+
+      <div className="create-content">
+        <section className="create-media-panel" aria-label="Add a photo or video">
+          <div className={`create-preview-stage ${cameraActive ? 'camera-is-active' : ''}`}>
+            {cameraActive ? <>
+              <video ref={videoRef} autoPlay muted playsInline className="create-live-video" />
+              <span className="camera-live-badge"><i /> Camera is on</span>
+              <button className="camera-close" type="button" onClick={stopCamera} aria-label="Close camera preview"><Icon name="close" size={18} /></button>
+              <div className="camera-capture-controls">
+                {mode === 'photo' ? <button className="camera-shutter" type="button" onClick={capturePhoto} aria-label="Take photo"><span /></button> : <button className={`camera-record ${recording ? 'is-recording' : ''}`} type="button" onClick={recording ? finishRecording : startRecording} aria-label={recording ? 'Stop recording' : 'Start video recording'}><span /></button>}
+                {recording && <span className="recording-label">Recording…</span>}
+              </div>
+            </> : selected ? <>
+              {selected.file.type.startsWith('video/') ? <video key={selected.url} src={selected.url} controls playsInline className="create-selected-media" /> : <img key={selected.url} src={selected.url} alt="Preview of selected photo" className="create-selected-media" />}
+              <button className="create-remove-media" type="button" onClick={removeSelected} aria-label="Remove selected media"><Icon name="close" size={18} /></button>
+              <span className="create-preview-badge">Preview</span>
+            </> : <div className="create-empty-preview">
+              <span className="create-empty-icon"><Icon name={mode === 'photo' ? 'image' : 'video'} size={28} /></span>
+              <strong>Your next moment starts here</strong>
+              <span>Open the camera or pick something from your phone.</span>
+            </div>}
+          </div>
+
+          <div className="create-mode-switch" role="group" aria-label="Media type">
+            <button type="button" className={mode === 'photo' ? 'is-selected' : ''} aria-pressed={mode === 'photo'} disabled={cameraActive} onClick={() => { setMode('photo'); setCameraError(''); }}><Icon name="image" size={18} /> Photo</button>
+            <button type="button" className={mode === 'video' ? 'is-selected' : ''} aria-pressed={mode === 'video'} disabled={cameraActive} onClick={() => { setMode('video'); setCameraError(''); }}><Icon name="video" size={18} /> Video</button>
+          </div>
+          <div className="create-source-actions">
+            <button className="create-source-button" type="button" disabled={cameraActive} onClick={openCamera}><Icon name="camera" size={19} /><span><strong>Open camera</strong><small>{mode === 'video' ? 'Camera and mic permission needed' : 'Your browser will ask permission'}</small></span></button>
+            <button className="create-source-button" type="button" disabled={cameraActive} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={19} /><span><strong>Choose from phone</strong><small>Pick a {mode} from your gallery</small></span></button>
+            <input ref={fileInputRef} className="create-file-input" type="file" accept={mode === 'photo' ? 'image/*' : 'video/*'} multiple onChange={addFiles} />
+          </div>
+          {cameraError && <p className="create-camera-error" role="alert">{cameraError}</p>}
+          {previewItems.length > 1 && <div className="create-media-strip" aria-label="Selected media">
+            {previewItems.map((item, index) => <button type="button" className={`create-media-thumb ${index === activeIndex ? 'is-active' : ''}`} key={`${item.file.name}-${item.file.size}-${index}`} onClick={() => setActiveIndex(index)} aria-label={`Preview ${item.file.name}`}>
+              {item.file.type.startsWith('video/') ? <video src={item.url} muted playsInline /> : <img src={item.url} alt="" />}
+            </button>)}
+            <span>{previewItems.length}/5 selected</span>
+          </div>}
+        </section>
+
+        <section className="create-edit-panel" aria-label="Edit your post">
+          <label className="create-caption-label" htmlFor="create-caption">Add a caption</label>
+          <textarea id="create-caption" value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={5000} placeholder="What do you want to share?" />
+          <div className="create-caption-footer"><span>Say a little more about this moment.</span><small>{caption.length}/5000</small></div>
+          <div className="create-post-note"><Icon name="spark" size={17} /><span>{apiOnline && token ? 'Your post will be shared with the Scroll community.' : 'Your post will appear in this preview on this device.'}</span></div>
+          <button className="button button-primary create-share-mobile" disabled={posting || (!caption.trim() && files.length === 0)}>{posting ? 'Sharing…' : 'Share with everyone'} <Icon name="arrow" size={17} /></button>
+        </section>
+      </div>
+    </form>
   </div>;
 }
 
@@ -709,7 +932,7 @@ function App() {
     {authOpen && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthOpen(false)} onSuccess={handleAuthSuccess} />}
     {searchOpen && <div className="search-scrim" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}><form className="search-dialog" onSubmit={submitSearch}><div className="search-dialog-field"><Icon name="search" size={22} /><input className="search-input" autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people and posts" aria-label="Search Scroll" /><button type="button" className="icon-button" onClick={() => { setSearch(''); setSearchResults(null); setSearchOpen(false); }} aria-label="Close search"><Icon name="close" /></button></div><p>Look for a creator or a moment you want to find again.</p>{searching && <span className="search-dialog-hint">Searching…</span>}<button className="button button-primary search-submit" disabled={!search.trim() || searching}>Search <Icon name="arrow" size={16} /></button></form></div>}
     {commentPost && <CommentSheet post={commentPost} token={token} onClose={() => setCommentPost(null)} showToast={showToast} />}
-    {composerOpen && <div className="modal-scrim" onMouseDown={(event) => event.target === event.currentTarget && setComposerOpen(false)}><section className="composer-card" role="dialog" aria-modal="true" aria-labelledby="compose-heading"><header><div><span className="eyebrow">A little something from you</span><h2 id="compose-heading">Share a moment</h2></div><button className="icon-button" aria-label="Close composer" onClick={() => setComposerOpen(false)}><Icon name="close" /></button></header><form onSubmit={submitPost}><textarea value={composeText} onChange={(event) => setComposeText(event.target.value)} maxLength={5000} placeholder="What’s making your day a little brighter?" aria-label="Post text" autoFocus /><div className="composer-bottom"><label className="attach-button"><Icon name="image" size={18} /><span>Add photos or video</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple onChange={(event) => setComposeFiles([...event.target.files].slice(0, 5))} /></label><small>{composeText.length}/5000</small></div>{composeFiles.length > 0 && <div className="file-pills">{composeFiles.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}</div>}<button className="button button-primary compose-submit" disabled={posting || (!composeText.trim() && composeFiles.length === 0)}>{posting ? 'Sharing…' : 'Share with everyone'} <Icon name="arrow" size={16} /></button><p className="compose-note">{apiOnline && token ? 'Your post will be shared with the community.' : 'This preview saves your post to this session only.'}</p></form></section></div>}
+    {composerOpen && <CreatePage files={composeFiles} setFiles={setComposeFiles} caption={composeText} setCaption={setComposeText} onSubmit={submitPost} onClose={() => { setComposerOpen(false); setComposeText(''); setComposeFiles([]); }} posting={posting} apiOnline={apiOnline} token={token} showToast={showToast} />}
     {toast && <div className="toast" role="status"><Icon name="spark" size={16} />{toast}</div>}
   </div>;
 }
