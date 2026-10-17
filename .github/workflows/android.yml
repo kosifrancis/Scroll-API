@@ -1,0 +1,100 @@
+name: Build Scroll Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scroll-android-apk
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Install frontend packages
+        run: npm ci --prefix frontend
+
+      - name: Build the web app for Android
+        run: npm run build --prefix frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      - name: Generate the Android project
+        working-directory: frontend
+        run: npx --yes @capacitor/cli@8.5.3 add android
+
+      - name: Add camera and microphone permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path('frontend/android/app/src/main/AndroidManifest.xml')
+          xml = manifest.read_text(encoding='utf-8')
+          permissions = (
+              '    <uses-permission android:name="android.permission.CAMERA" />\n'
+              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
+              '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n'
+          )
+          if 'android.permission.CAMERA' not in xml:
+              xml = xml.replace('    <application', permissions + '    <application', 1)
+              manifest.write_text(xml, encoding='utf-8')
+          PY
+
+      - name: Build installable APK
+        working-directory: frontend/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Prepare download file
+        run: cp frontend/android/app/build/outputs/apk/debug/app-debug.apk Scroll.apk
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scroll-android-apk
+          path: Scroll.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish public APK download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: scroll-android-${{ github.run_number }}
+          name: Scroll Android build ${{ github.run_number }}
+          body: |
+            Install this APK on an Android phone to use Scroll.
+
+            On the phone, open the download and allow installation when Android asks. The app requests camera and microphone access only for recording posts.
+          files: Scroll.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
