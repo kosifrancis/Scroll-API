@@ -95,8 +95,9 @@ function AuthModal({ mode, setMode, onClose, onSuccess }) {
     setError('');
     setBusy(true);
     try {
-      if (signup) await registerUser(form.username.trim(), form.email.trim(), form.password, form.age);
-      const session = await loginUser(form.email.trim(), form.password);
+      const session = signup
+        ? await registerUser(form.username.trim(), form.email.trim(), form.password, form.age)
+        : await loginUser(form.email.trim(), form.password);
       onSuccess(session);
     } catch (err) {
       setError(err.message || 'We could not sign you in. Please try again.');

@@ -18,6 +18,7 @@ const searchRoutes = require('./Routes/searchRoutes');
 
 const app = express();
 const allowedOrigins = new Set([
+    'https://kosifrancis.github.io',
     process.env.FRONTEND_URL,
     ...(process.env.CORS_ORIGINS || '').split(',')
 ].map((origin) => origin?.trim().replace(/\/$/, '')).filter(Boolean));

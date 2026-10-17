@@ -1,7 +1,9 @@
 const configuredApi = import.meta.env.VITE_API_URL?.trim();
 const configuredBase = configuredApi
-  ? `${configuredApi.replace(/\/$/, '').replace(/\/api$/i, '')}/api`
-  : `${window.location.origin}/api`;
+  ? `${configuredApi.replace(/\/+$/, '').replace(/\/api$/i, '')}/api`
+  : import.meta.env.DEV
+    ? `${window.location.origin}/api`
+    : '';
 const API_BASE = configuredBase.replace(/\/$/, '');
 
 export function apiOrigin() {
@@ -14,6 +16,9 @@ export function assetUrl(path) {
 }
 
 export async function apiRequest(path, { method = 'GET', token = '', body, signal } = {}) {
+  if (!API_BASE) {
+    throw new Error('The Scroll API is not connected yet. Set the VITE_API_URL deployment variable to your backend URL, then redeploy the website.');
+  }
   const headers = { Accept: 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
